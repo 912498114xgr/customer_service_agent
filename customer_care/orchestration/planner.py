@@ -69,7 +69,8 @@ class MultiSkillPlanner:
             "不能猜测缺失实体。只选择给定工具目录中的工具。capability 必须逐字使用该工具目录声明的 capability；"
             "intent 必须是工具目录给出的 task_intents 之一，表示这个子任务的具体目标，不要只填宽泛领域。\n"
             f"重规划约束：{state.context_summary or '无'}\n"
-            f"用户问题：{query}\n当前意图：{state.intent}\n已知实体：{state.entities}\n工具目录：{self._tool_descriptions()}"
+            f"用户问题：{query}\n当前意图：{state.intent}\n已识别目标：{state.intent_goals}\n"
+            f"已知实体：{state.entities}\n工具目录：{self._tool_descriptions()}"
         )
         try:
             raw = parse_model_json(await self._llm.complete([{"role": "user", "content": prompt}]), _RawPlan)

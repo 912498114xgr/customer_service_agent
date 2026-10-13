@@ -121,6 +121,9 @@ def _responses_for(case: TrajectoryCase) -> list[str]:
                 "entities": case.entities,
                 "emotion": case.emotion,
                 "confidence": 0.95 if case.intent != "other" else 0.2,
+                "goals": [{"intent": case.intent, "objective": case.query}],
+                "conflict": False,
+                "needs_clarification": case.intent == "other",
             }
         )
     ]

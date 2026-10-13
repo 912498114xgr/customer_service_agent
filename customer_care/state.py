@@ -11,6 +11,9 @@ class CareState(BaseModel):
     language: str = "en"
     intent: str | None = None
     intent_confidence: float = 0.0
+    intent_goals: list[dict[str, str]] = Field(default_factory=list)
+    intent_conflict: bool = False
+    intent_needs_clarification: bool = False
     entities: dict[str, Any] = Field(default_factory=dict)
     rewritten_query: str | None = None
     rewrite_ambiguous: bool = False

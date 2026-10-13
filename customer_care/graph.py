@@ -11,7 +11,6 @@ from customer_care.nodes.language import detect_language
 from customer_care.nodes.rewrite import rewrite_query
 from customer_care.knowledge import KnowledgeRetriever
 from customer_care.orchestration import MultiSkillExecutor, MultiSkillPlanner
-from customer_care.orchestration.detection import is_multi_task_request
 from customer_care.state import CareState
 from customer_care.tools.registry import ToolRegistry
 from customer_care.tools.router import ToolRouter
@@ -45,13 +44,6 @@ def build_customer_care_graph(
 
     def routing_node(raw_state: dict[str, Any]) -> dict[str, str]:
         return route_decision(CareState.model_validate(raw_state))
-
-    def multi_task_detector(raw_state: dict[str, Any]) -> dict[str, bool]:
-        state = CareState.model_validate(raw_state)
-        query = (state.rewritten_query or "").lower()
-        if not query:
-            query = " ".join(str(message.get("content", "")) for message in state.messages[-1:]).lower()
-        return {"multi_skill_requested": is_multi_task_request(query)}
 
     async def plan_tasks_node(raw_state: dict[str, Any]) -> dict[str, object]:
         state = CareState.model_validate(raw_state)
@@ -135,15 +127,13 @@ def build_customer_care_graph(
     graph.add_node("self_service", self_service_node)
     graph.add_node("reply", reply_node)
     graph.add_node("retrieve_knowledge", knowledge_node)
-    graph.add_node("detect_multi_task", multi_task_detector)
     graph.add_node("plan_tasks", plan_tasks_node)
     graph.add_node("execute_plan", execute_plan_node)
 
     graph.add_edge(START, "detect_language")
     graph.add_edge("detect_language", "recognize_intent")
     graph.add_edge("recognize_intent", "rewrite_query")
-    graph.add_edge("rewrite_query", "detect_multi_task")
-    graph.add_edge("detect_multi_task", "route_decision")
+    graph.add_edge("rewrite_query", "route_decision")
     graph.add_conditional_edges(
         "route_decision",
         lambda state: state.route,

@@ -82,7 +82,7 @@ def load_orchestration_dataset(path: Path | None = None) -> tuple[str, list[Orch
 
 
 def evaluate_detector(cases: list[OrchestrationCase] | None = None) -> dict[str, Any]:
-    """用固定多语言样本测量当前连接词启发式的入口质量。"""
+    """重现 T22 连接词启发式历史基线；当前主图不再使用该检测器。"""
     cases = cases or load_orchestration_dataset()[1]
     results = [
         {
@@ -120,6 +120,60 @@ def evaluate_detector(cases: list[OrchestrationCase] | None = None) -> dict[str,
         "false_positives": [item["id"] for item in results if not item["expected"] and item["actual"]],
         "false_negatives": [item["id"] for item in results if item["expected"] and not item["actual"]],
         "cases": results,
+    }
+
+
+def evaluate_intent_predictions(
+    cases: list[OrchestrationCase], predictions: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """对意图节点导出的分类结果评分，不发起模型调用。"""
+    case_by_id = {case.case_id: case for case in cases}
+    prediction_by_id: dict[str, dict[str, Any]] = {}
+    fields = ("multi_skill_requested", "conflict", "needs_clarification")
+    for prediction in predictions:
+        if not isinstance(prediction, dict) or not isinstance(prediction.get("id"), str):
+            raise ValueError("每条意图预测必须是包含字符串 id 的对象")
+        case_id = prediction["id"]
+        if case_id not in case_by_id or case_id in prediction_by_id:
+            raise ValueError(f"未知或重复的意图预测 case id：{case_id}")
+        if any(type(prediction.get(field)) is not bool for field in fields):
+            raise ValueError(f"意图预测 {case_id} 必须包含布尔字段：{fields}")
+        prediction_by_id[case_id] = prediction
+
+    labels = {
+        case.case_id: {
+            "multi_skill_requested": case.expected_multi_task and not case.expected_clarification,
+            "conflict": case.conflict,
+            "needs_clarification": case.expected_clarification,
+        }
+        for case in cases
+    }
+    metrics: dict[str, dict[str, float | int]] = {}
+    for field in fields:
+        tp = fp = fn = correct = 0
+        for case_id, expected in labels.items():
+            actual = prediction_by_id.get(case_id, {}).get(field, False)
+            target = expected[field]
+            tp += actual and target
+            fp += actual and not target
+            fn += not actual and target
+            correct += actual == target
+        metrics[field] = {
+            "accuracy": correct / len(cases),
+            "precision": _ratio(tp, tp + fp),
+            "recall": _ratio(tp, tp + fn),
+            "f1": _f1(tp, fp, fn),
+        }
+    unsafe_conflict_dispatch = sum(
+        prediction_by_id.get(case.case_id, {}).get("conflict", False)
+        and prediction_by_id.get(case.case_id, {}).get("multi_skill_requested", False)
+        for case in cases
+    )
+    return {
+        "total": len(cases),
+        "metrics": metrics,
+        "unsafe_conflict_dispatch_count": unsafe_conflict_dispatch,
+        "missing_prediction_ids": sorted(set(case_by_id) - set(prediction_by_id)),
     }
 
 
@@ -256,6 +310,7 @@ def format_detector_report(version: str, report: dict[str, Any]) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="评估客服多 Skill 入口与计划")
     parser.add_argument("--predictions", type=Path, help="模型计划预测 JSON 文件")
+    parser.add_argument("--intent-predictions", type=Path, help="意图节点的路由预测 JSON 文件")
     args = parser.parse_args()
     import sys
 
@@ -264,6 +319,10 @@ def main() -> None:
     version, cases = load_orchestration_dataset()
     detector_report = evaluate_detector(cases)
     print(format_detector_report(version, detector_report))
+    if args.intent_predictions:
+        predictions = json.loads(args.intent_predictions.read_text(encoding="utf-8"))
+        print("\n意图路由评分（使用导出的预测，不触发模型调用）")
+        print(json.dumps(evaluate_intent_predictions(cases, predictions), ensure_ascii=False, indent=2))
     if args.predictions:
         predictions = json.loads(args.predictions.read_text(encoding="utf-8"))
         plan_report = evaluate_plan_predictions(cases, predictions)

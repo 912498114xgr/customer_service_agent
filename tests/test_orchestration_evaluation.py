@@ -24,6 +24,35 @@ def test_multi_skill_dataset_is_versioned_and_exposes_heuristic_failures() -> No
     assert {"en", "zh", "es"} == set(report["by_locale"])
 
 
+def test_intent_prediction_evaluator_scores_dispatch_conflict_and_clarification() -> None:
+    _, cases = load_orchestration_dataset()
+    predictions = [
+        {
+            "id": case.case_id,
+            "multi_skill_requested": case.expected_multi_task and not case.expected_clarification,
+            "conflict": case.conflict,
+            "needs_clarification": case.expected_clarification,
+        }
+        for case in cases
+    ]
+
+    report = orchestration_evaluation.evaluate_intent_predictions(cases, predictions)
+
+    assert report["metrics"]["multi_skill_requested"]["f1"] == 1.0
+    assert report["metrics"]["conflict"]["recall"] == 1.0
+    assert report["metrics"]["needs_clarification"]["accuracy"] == 1.0
+    assert report["unsafe_conflict_dispatch_count"] == 0
+
+
+def test_intent_prediction_evaluator_counts_missing_cases_as_false_negatives() -> None:
+    _, cases = load_orchestration_dataset()
+
+    report = orchestration_evaluation.evaluate_intent_predictions(cases, [])
+
+    assert report["missing_prediction_ids"] == sorted(case.case_id for case in cases)
+    assert report["metrics"]["conflict"]["recall"] == 0.0
+
+
 def test_plan_scorer_reports_exact_plan_clarification_and_conflict_metrics() -> None:
     _, cases = load_orchestration_dataset()
     predictions = [

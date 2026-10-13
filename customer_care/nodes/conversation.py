@@ -15,6 +15,16 @@ _CLARIFY_TEXT = {
     "es": "¿Sobre qué pedido nos consulta? Comparta el número de pedido, por favor.",
     "pt": "Sobre qual pedido você está perguntando? Informe o número do pedido, por favor.",
 }
+_CONFLICT_CLARIFY_TEXT = {
+    "en": "I found conflicting instructions. Should I proceed with the change, or leave the current setting as it is?",
+    "es": "He encontrado instrucciones contradictorias. ¿Quiere que haga el cambio o que mantenga la configuración actual?",
+    "pt": "Encontrei instruções conflitantes. Você quer que eu faça a alteração ou mantenha a configuração atual?",
+}
+_GENERAL_CLARIFY_TEXT = {
+    "en": "I am not certain what you would like me to do. Could you clarify the request?",
+    "es": "No estoy seguro de lo que desea. ¿Podría aclarar la solicitud?",
+    "pt": "Não tenho certeza do que você deseja. Poderia esclarecer o pedido?",
+}
 _HANDOFF_TEXT = {
     "en": "I’m connecting you with a support specialist. I’ll include the details you shared.",
     "es": "Le conectaré con un agente de soporte y compartiré los detalles necesarios.",
@@ -25,6 +35,8 @@ _HANDOFF_TEXT = {
 def route_decision(state: CareState) -> dict[str, str]:
     """按歧义、识别置信度和情绪选择澄清、自助或人工。"""
     if state.rewrite_ambiguous:
+        return {"route": "clarify"}
+    if state.intent_conflict or state.intent_needs_clarification:
         return {"route": "clarify"}
     if state.multi_skill_requested and state.intent_confidence >= 0.55:
         return {"route": "multi_skill"}
@@ -37,6 +49,10 @@ def route_decision(state: CareState) -> dict[str, str]:
 
 def clarify(state: CareState) -> dict[str, str]:
     """以用户语言提出最小必要追问。"""
+    if state.intent_conflict:
+        return {"answer": _CONFLICT_CLARIFY_TEXT.get(state.language, _CONFLICT_CLARIFY_TEXT["en"])}
+    if state.intent_needs_clarification or state.intent == "other":
+        return {"answer": _GENERAL_CLARIFY_TEXT.get(state.language, _GENERAL_CLARIFY_TEXT["en"])}
     return {"answer": _CLARIFY_TEXT.get(state.language, _CLARIFY_TEXT["en"])}
 
 

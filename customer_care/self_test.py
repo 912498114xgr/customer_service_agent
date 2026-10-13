@@ -14,7 +14,7 @@ async def run_self_test() -> None:
     """执行不访问外部 API、不连接 Redis 的端到端检查。"""
     graph_llm = MockLLM(
         [
-            '{"intent":"refund","entities":{"order_id":"R-17"},"emotion":"neutral","confidence":0.96}',
+            '{"intent":"refund","entities":{"order_id":"R-17"},"emotion":"neutral","confidence":0.96,"goals":[{"intent":"refund","objective":"查询退款状态"}],"conflict":false,"needs_clarification":false}',
             '{"tool_name":"get_refund_status","arguments":{"order_id":"R-17"}}',
             "Your refund for order R-17 is processing and should arrive in about 3 days.",
         ]

@@ -11,7 +11,7 @@ from customer_care.tools.router import ToolRouter
 
 def test_intent_node_validates_multilingual_structured_result() -> None:
     llm = MockLLM(
-        ['{"intent":"refund","entities":{"order_id":"R-17"},"emotion":"neutral","confidence":0.94}']
+        ['{"intent":"refund","entities":{"order_id":"R-17"},"emotion":"neutral","confidence":0.94,"goals":[{"intent":"refund","objective":"查询退款状态"}],"conflict":false,"needs_clarification":false}']
     )
     state = CareState(user_id="u1", messages=[{"role": "user", "content": "¿Dónde está mi reembolso del pedido R-17?"}])
 
@@ -20,6 +20,7 @@ def test_intent_node_validates_multilingual_structured_result() -> None:
     assert update["intent"] == "refund"
     assert update["entities"] == {"order_id": "R-17"}
     assert update["intent_confidence"] == 0.94
+    assert update["multi_skill_requested"] is False
 
 
 def test_invalid_intent_output_falls_back_to_clarification_safe_values() -> None:
@@ -30,6 +31,32 @@ def test_invalid_intent_output_falls_back_to_clarification_safe_values() -> None
 
     assert update["intent"] == "other"
     assert update["intent_confidence"] == 0.0
+    assert update["intent_needs_clarification"] is True
+
+
+def test_intent_recognition_marks_multiple_goals_in_same_request() -> None:
+    llm = MockLLM([
+        '{"intent":"order","entities":{"order_id":"A"},"emotion":"neutral","confidence":0.93,"goals":[{"intent":"order","objective":"查订单状态"},{"intent":"order","objective":"获取订单收据"}],"conflict":false,"needs_clarification":false}'
+    ])
+    state = CareState(user_id="u1", messages=[{"role": "user", "content": "Check order A and show my receipt"}])
+
+    update = asyncio.run(recognize_intent(state, llm))
+
+    assert len(update["intent_goals"]) == 2
+    assert update["multi_skill_requested"] is True
+
+
+def test_conflicting_intent_result_does_not_request_multi_skill_execution() -> None:
+    llm = MockLLM([
+        '{"intent":"refund","entities":{"order_id":"A"},"emotion":"neutral","confidence":0.94,"goals":[{"intent":"refund","objective":"退款"},{"intent":"refund","objective":"不退款"}],"conflict":true,"needs_clarification":true}'
+    ])
+    state = CareState(user_id="u1", messages=[{"role": "user", "content": "Refund order A, but do not refund it"}])
+
+    update = asyncio.run(recognize_intent(state, llm))
+
+    assert update["intent_conflict"] is True
+    assert update["intent_needs_clarification"] is True
+    assert update["multi_skill_requested"] is False
 
 
 def test_language_detection_distinguishes_spanish_and_portuguese_order_phrases() -> None:

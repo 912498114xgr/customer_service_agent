@@ -346,7 +346,7 @@ def test_planner_replan_prompt_contains_failure_context() -> None:
 
 def test_multi_skill_path_is_reachable_from_customer_care_graph() -> None:
     llm = MockLLM([
-        '{"intent":"order","entities":{"order_id":"A"},"emotion":"neutral","confidence":0.95}',
+        '{"intent":"order","entities":{"order_id":"A"},"emotion":"neutral","confidence":0.95,"goals":[{"intent":"order","objective":"查询订单状态"},{"intent":"order","objective":"获取订单收据"}],"conflict":false,"needs_clarification":false}',
         '{"tasks":[{"task_id":"status","intent":"get_order_status","tool_name":"get_order_status","capability":"get_order_status","arguments":{"order_id":"A"},"dependencies":[]},{"task_id":"receipt","intent":"get_order_receipt","tool_name":"get_order_receipt","capability":"get_order_receipt","arguments":{"order_id":"A"},"dependencies":[]}],"rationale":"两个独立查询","confidence":0.95}',
         "已完成订单状态和收据查询。",
     ])
@@ -357,6 +357,7 @@ def test_multi_skill_path_is_reachable_from_customer_care_graph() -> None:
     assert result.multi_skill_requested is True
     assert result.execution_status == "succeeded"
     assert {item["task_id"] for item in result.task_results} == {"status", "receipt"}
+    assert "已识别目标" in llm.calls[1][0]["content"]
 
 
 def test_graph_replans_mismatched_read_result_and_keeps_parallel_result() -> None:
@@ -367,7 +368,7 @@ def test_graph_replans_mismatched_read_result_and_keeps_parallel_result() -> Non
         for tool in ToolCatalog.load_default().tools
     ])
     llm = MockLLM([
-        '{"intent":"order","entities":{"order_id":"A"},"emotion":"neutral","confidence":0.95}',
+        '{"intent":"order","entities":{"order_id":"A"},"emotion":"neutral","confidence":0.95,"goals":[{"intent":"order","objective":"查询订单状态"},{"intent":"order","objective":"查看订单详情"}],"conflict":false,"needs_clarification":false}',
         '{"tasks":[{"task_id":"status","intent":"order_lookup","tool_name":"get_order_status","capability":"order_lookup","arguments":{"order_id":"A"},"dependencies":[]},{"task_id":"details","intent":"order_lookup","tool_name":"get_order_details","capability":"order_lookup","arguments":{"order_id":"A"},"dependencies":[]}],"confidence":0.95}',
         '{"tasks":[{"task_id":"status","intent":"order_lookup","tool_name":"get_order_details","capability":"order_lookup","arguments":{"order_id":"A"},"dependencies":[]}],"confidence":0.95}',
         "订单查询已完成。",
