@@ -1,6 +1,6 @@
 # Agent Rebuild
 
-用 Python + LangGraph 重实现两个本地可验证的 Agent 垂直切片。当前客服切片推进到 T23；诊断切片尚未开始。T18-T23 加入本地多 Skill 计划/DAG 执行、主图接入、结果契约、只读有限恢复、多目标意图契约和固定评测基线；尚无真实模型预测指标，不能视作生产级路由。
+用 Python + LangGraph 重实现两个本地可验证的 Agent 垂直切片。当前客服切片推进到 T24；诊断切片尚未开始。T18-T24 加入本地多 Skill 计划/DAG 执行、主图接入、结果契约、只读有限恢复、多目标意图契约、固定评测基线和逐步解释的本地学习工作台；尚无真实模型预测指标，不能视作生产级路由。
 
 ## 环境准备
 
@@ -24,11 +24,13 @@ uv run python -m customer_care.self_test
 服务化体验需要额外 Web 依赖：
 
 ```powershell
-uv sync --extra web
+uv sync --default-index https://pypi.org/simple --extra web
 uv run uvicorn customer_care.api:create_app --factory --reload
 ```
 
-API 端点为 `/health`、`POST /v1/chat` 和 `/v1/chat/{user_id}/stream`；工作台文件在 `customer_care/web/index.html`。当前环境的网络权限未完成 FastAPI/uvicorn 下载，核心离线测试不依赖它们。
+打开 `http://127.0.0.1:8000` 可用学习工作台体验客服主图。页面的固定剧本会真实运行本地 LangGraph 和工具注册表，但模型响应是预置的，用来观察多 Skill、冲突拦截和结构化输出失败分支；它不是自由问答，也不代表模型准确率。学习路线、每个面板代表的状态字段和面试自测问题见 [T24 学习工作台说明](客服切片_T24_学习工作台与主链路演练.md)。要自由提问，需要在 `.env` 配置兼容模型，并设置 `USE_MOCK=false`；真实请求可能产生费用。本地没有 `.env` 时默认只显示固定剧本，页面会明确提示真实模型未配置。
+
+API 端点为 `/health`、`POST /v1/chat`、`GET /v1/chat/{user_id}/stream` 和固定演练 `/v1/demo/*`；工作台文件在 `customer_care/web/index.html`。Web 依赖属于 `web` extra，不安装时核心离线主图演练仍可直接测试。
 
 ## 路由评测基线
 
@@ -104,5 +106,5 @@ tests/                          离线单测与端到端测试
 
 ## 项目验收与协作方式
 
-当前项目的生产深度盘点见 [项目最终验收标准_压力面试矩阵.md](项目最终验收标准_压力面试矩阵.md)，后续开发和阶段提交遵循 [VibeCoding协作契约.md](VibeCoding协作契约.md)。T18-T23 已建立本地多 Skill 计划/DAG、多目标路由契约、冲突澄清、结果校验、只读有限恢复和评测基线；后续需真实预测对照，再补确认闭环、持久化幂等和生产适配。
+当前项目的生产深度盘点见 [项目最终验收标准_压力面试矩阵.md](项目最终验收标准_压力面试矩阵.md)，后续开发和阶段提交遵循 [VibeCoding协作契约.md](VibeCoding协作契约.md)。T18-T24 已建立本地多 Skill 计划/DAG、多目标路由契约、冲突澄清、结果校验、只读有限恢复、评测基线和可观察主图演练；后续需真实预测对照，再补确认闭环、持久化幂等和生产适配。
 
