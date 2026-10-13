@@ -31,7 +31,7 @@ where = ["."]
 include = ["common*", "customer_care*", "diagnosis*"]
 
 [tool.setuptools.package-data]
-customer_care = ["data/*.json", "evaluation/*.json", "knowledge/*.json"]
+customer_care = ["data/*.json", "evaluation/*.json", "knowledge/*.json", "web/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

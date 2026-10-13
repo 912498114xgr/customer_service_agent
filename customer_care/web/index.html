@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>客服 Agent 工作台</title>
+<style>
+body{font-family:system-ui,"Microsoft YaHei",sans-serif;max-width:980px;margin:0 auto;padding:24px;color:#18212f;background:#f5f7fa}.layout{display:grid;grid-template-columns:1.4fr .8fr;gap:16px}.panel{background:white;border:1px solid #d9dee7;border-radius:6px;padding:16px}.messages{min-height:360px}.msg{padding:10px;margin:8px 0;border-radius:5px;white-space:pre-wrap}.user{background:#e8f1ff}.agent{background:#f0f2f5}textarea{width:100%;box-sizing:border-box;min-height:80px}button{margin-top:8px;padding:8px 16px;background:#1769e0;color:white;border:0;border-radius:4px}.trace{font:12px monospace;white-space:pre-wrap;max-height:260px;overflow:auto}@media(max-width:700px){.layout{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<h1>客服 Agent 工作台</h1>
+<div class="layout">
+<section class="panel"><div id="messages" class="messages"></div><textarea id="input" placeholder="输入订单、退款、配送或优惠券问题"></textarea><button id="send">发送</button></section>
+<aside class="panel"><h2>知识来源</h2><div id="sources">暂无</div><h2>运行轨迹</h2><div id="trace" class="trace">暂无</div></aside>
+</div>
+<script>
+const input=document.querySelector('#input'),send=document.querySelector('#send');
+function add(role,text){const el=document.createElement('div');el.className='msg '+role;el.textContent=text;document.querySelector('#messages').append(el)}
+async function chat(){const content=input.value.trim();if(!content)return;input.value='';send.disabled=true;add('user',content);try{const r=await fetch('/v1/chat',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user_id:'web-demo-user',content})});const data=await r.json();if(!r.ok)throw Error(data.detail||'请求失败');add('agent',data.answer||'没有生成回复');document.querySelector('#trace').textContent=JSON.stringify(data.trace,null,2);document.querySelector('#sources').textContent=(data.trace?.knowledge_sources||[]).map(s=>s.title+': '+s.snippet).join('\n\n')||'本轮没有命中知识来源'}catch(e){add('agent','请求失败：'+e.message)}finally{send.disabled=false}}
+send.onclick=chat;
+input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();chat()}});
+</script>
+</body>
+</html>
