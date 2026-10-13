@@ -20,6 +20,9 @@ class CareState(BaseModel):
     tool_args: dict[str, Any] = Field(default_factory=dict)
     tool_result: dict[str, Any] = Field(default_factory=dict)
     handoff_summary: str | None = None
+    context_summary: str | None = None
+    knowledge_context: str = ""
+    knowledge_sources: list[dict[str, Any]] = Field(default_factory=list)
     answer: str | None = None
     emotion: str | None = None
 

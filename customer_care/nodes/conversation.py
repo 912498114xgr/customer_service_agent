@@ -67,10 +67,13 @@ async def reply(state: CareState, llm: LLMClient) -> dict[str, str]:
     context: dict[str, Any] = {
         "tool_result": state.tool_result,
         "clarification": state.answer if state.route == "clarify" else None,
+        "knowledge_context": state.knowledge_context,
+        "knowledge_sources": state.knowledge_sources,
     }
     prompt = (
         "你是多语言外卖客服，只根据给定事实回复用户。不要承诺已经执行退款、赔付或账户变更；"
-        "需要人工处理时要明确说明，不要泄露内部摘要。只输出面向用户的简短回复。\n"
+        "需要人工处理时要明确说明，不要泄露内部摘要。若使用知识证据，引用证据标题而不是编造来源。"
+        "只输出面向用户的简短回复。\n"
         f"回复语言代码：{state.language}\n用户问题：{latest_user_message(state)}\n事实数据：{context}"
     )
     try:

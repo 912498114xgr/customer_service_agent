@@ -40,6 +40,8 @@ class CustomerCareService:
             "tool_args": result.tool_args,
             "tool_result": result.tool_result,
             "handoff_summary": result.handoff_summary,
+            "context_summary": result.context_summary,
+            "knowledge_sources": result.knowledge_sources,
         }
 
     async def reset(self, user_id: str) -> None:

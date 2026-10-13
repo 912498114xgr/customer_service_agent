@@ -9,6 +9,7 @@ from customer_care.nodes.conversation import clarify, human_handoff, reply, rout
 from customer_care.nodes.intent import recognize_intent
 from customer_care.nodes.language import detect_language
 from customer_care.nodes.rewrite import rewrite_query
+from customer_care.knowledge import KnowledgeRetriever
 from customer_care.state import CareState
 from customer_care.tools.registry import ToolRegistry
 from customer_care.tools.router import ToolRouter
@@ -19,11 +20,13 @@ def build_customer_care_graph(
     *,
     registry: ToolRegistry | None = None,
     router: ToolRouter | None = None,
+    knowledge: KnowledgeRetriever | None = None,
 ) -> Any:
     """构建包含澄清、自助和人工分支的客服状态图。"""
     llm = llm or create_llm_client()
     registry = registry or ToolRegistry()
     router = router or ToolRouter(llm)
+    knowledge = knowledge or KnowledgeRetriever.load_default()
     graph = StateGraph(CareState)
 
     graph.add_node("detect_language", detect_language)
@@ -52,6 +55,17 @@ def build_customer_care_graph(
     async def reply_node(raw_state: dict[str, Any]) -> dict[str, str]:
         return await reply(CareState.model_validate(raw_state), llm)
 
+    def knowledge_node(raw_state: dict[str, Any]) -> dict[str, object]:
+        state = CareState.model_validate(raw_state)
+        query = state.rewritten_query or " ".join(
+            str(message.get("content", "")) for message in state.messages[-2:] if message.get("role") == "user"
+        )
+        hits = knowledge.search(query, language=state.language, topic=state.intent, top_k=3)
+        return {
+            "knowledge_context": knowledge.context(hits),
+            "knowledge_sources": [hit.as_dict() for hit in hits],
+        }
+
     graph.add_node("recognize_intent", intent_node)
     graph.add_node("rewrite_query", rewrite_node)
     graph.add_node("route_decision", routing_node)
@@ -60,6 +74,7 @@ def build_customer_care_graph(
     graph.add_node("skill_router", tool_router_node)
     graph.add_node("self_service", self_service_node)
     graph.add_node("reply", reply_node)
+    graph.add_node("retrieve_knowledge", knowledge_node)
 
     graph.add_edge(START, "detect_language")
     graph.add_edge("detect_language", "recognize_intent")
@@ -70,10 +85,11 @@ def build_customer_care_graph(
         lambda state: state.route,
         {"clarify": "clarify", "human": "human_handoff", "self_service": "skill_router"},
     )
-    graph.add_edge("clarify", "reply")
-    graph.add_edge("human_handoff", "reply")
+    graph.add_edge("clarify", "retrieve_knowledge")
+    graph.add_edge("human_handoff", "retrieve_knowledge")
     graph.add_edge("skill_router", "self_service")
-    graph.add_edge("self_service", "reply")
+    graph.add_edge("self_service", "retrieve_knowledge")
+    graph.add_edge("retrieve_knowledge", "reply")
     graph.add_edge("reply", END)
     return graph.compile()
 

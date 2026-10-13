@@ -27,6 +27,8 @@ def test_refund_status_happy_path_runs_through_self_service() -> None:
     assert state.selected_tool == "get_refund_status"
     assert state.tool_result["status"] == "processing"
     assert "3 days" in (state.answer or "")
+    assert state.knowledge_sources
+    assert state.knowledge_sources[0]["id"] in {"refund-policy", "refund-timeline"}
 
 
 def test_angry_user_is_handed_to_human_without_running_tools() -> None:
