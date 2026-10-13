@@ -52,6 +52,8 @@ LLM_BASE_URL=https://api.deepseek.com/v1
 LLM_MODEL=deepseek-chat
 ```
 
+也兼容 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`、`OPENAI_TIMEOUT_SECONDS` 和 `OPENAI_MAX_RETRIES` 命名；两套变量同时存在时优先使用 `LLM_*`。API Key 只放在本机 `.env` 或进程环境变量中，不要粘贴到代码、提交记录或聊天中。
+
 不要把真实 `.env` 或密钥提交到版本库。真实 LLM 请求会产生网络和费用；自动化测试默认不启用真实请求。
 
 T10 增加了 `LLM_TIMEOUT_SECONDS` 和 `LLM_MAX_RETRIES`。模型请求失败时，图节点会分别进入澄清、候选回退或本地回复模板，不会因为模型故障执行退款、赔付或账户变更。详细配置和边界见 [客服切片_T10_真实模型接入.md](客服切片_T10_真实模型接入.md)。
