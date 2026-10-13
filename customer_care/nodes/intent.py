@@ -37,7 +37,7 @@ async def recognize_intent(state: CareState, llm: LLMClient) -> dict[str, object
         '用户：Quiero saber el estado de mi reembolso. -> {"intent":"refund","entities":{},"emotion":"neutral","confidence":0.96}\n'
         '用户：Meu pedido ainda não chegou. -> {"intent":"track_order","entities":{},"emotion":"frustrated","confidence":0.91}\n'
         '用户：Where is order A123? -> {"intent":"track_order","entities":{"order_id":"A123"},"emotion":"neutral","confidence":0.98}\n'
-        f"语言：{state.language}\n上下文：{history}\n当前消息：{query}"
+        f"语言：{state.language}\n历史摘要：{state.context_summary or '无'}\n上下文：{history}\n当前消息：{query}"
     )
     try:
         result = parse_model_json(

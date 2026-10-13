@@ -43,7 +43,7 @@ async def rewrite_query(state: CareState, llm: LLMClient) -> dict[str, object]:
         "示例：\n"
         '上下文实体：order_id=A123；问题：Can I get a refund for it? -> {"rewritten_query":"Can I get a refund for order A123?","ambiguous":false,"explanation":"it 指代已识别的订单。"}\n'
         '上下文实体：无；问题：What about that? -> {"rewritten_query":"What about that?","ambiguous":true,"explanation":"没有可确定的指代对象。"}\n'
-        f"语言：{state.language}\n历史：{state.messages[-8:]}\n已识别实体：{state.entities}\n当前问题：{query}"
+        f"语言：{state.language}\n历史摘要：{state.context_summary or '无'}\n历史：{state.messages[-8:]}\n已识别实体：{state.entities}\n当前问题：{query}"
     )
     try:
         result = parse_model_json(

@@ -1,6 +1,7 @@
 """带不可变状态快照的进程内记忆后端。"""
 
 import asyncio
+import time
 
 from customer_care.memory.base import MemoryStore, VersionNotFoundError
 from customer_care.memory.versioning import make_version, parse_state, serialize_state
@@ -8,10 +9,12 @@ from customer_care.state import CareState
 
 
 class InMemoryMemoryStore(MemoryStore):
-    def __init__(self) -> None:
+    def __init__(self, *, ttl_seconds: int | None = None) -> None:
         self._snapshots: dict[str, dict[str, str]] = {}
         self._current_versions: dict[str, str] = {}
         self._locks: dict[str, asyncio.Lock] = {}
+        self._expires_at: dict[str, float] = {}
+        self._ttl_seconds = ttl_seconds
 
     def _lock_for(self, user_id: str) -> asyncio.Lock:
         if user_id not in self._locks:
@@ -20,6 +23,7 @@ class InMemoryMemoryStore(MemoryStore):
 
     async def load(self, user_id: str) -> CareState:
         async with self._lock_for(user_id):
+            self._purge_if_expired(user_id)
             version = self._current_versions.get(user_id)
             if version is None:
                 return CareState(user_id=user_id)
@@ -30,11 +34,14 @@ class InMemoryMemoryStore(MemoryStore):
             raise ValueError("state.user_id must match user_id")
 
         async with self._lock_for(user_id):
+            self._purge_if_expired(user_id)
             snapshots = self._snapshots.setdefault(user_id, {})
             payload = serialize_state(state)
             version = make_version(len(snapshots) + 1, payload)
             snapshots[version] = payload
             self._current_versions[user_id] = version
+            if self._ttl_seconds is not None:
+                self._expires_at[user_id] = time.monotonic() + self._ttl_seconds
             return version
 
     async def history(self, user_id: str) -> list[dict[str, object]]:
@@ -43,9 +50,20 @@ class InMemoryMemoryStore(MemoryStore):
 
     async def rollback(self, user_id: str, version: str) -> CareState:
         async with self._lock_for(user_id):
+            self._purge_if_expired(user_id)
             payload = self._snapshots.get(user_id, {}).get(version)
             if payload is None:
                 raise VersionNotFoundError(f"unknown memory version: {version}")
             self._current_versions[user_id] = version
+            if self._ttl_seconds is not None:
+                self._expires_at[user_id] = time.monotonic() + self._ttl_seconds
             return parse_state(payload)
+
+    def _purge_if_expired(self, user_id: str) -> None:
+        expires_at = self._expires_at.get(user_id)
+        if expires_at is None or expires_at > time.monotonic():
+            return
+        self._snapshots.pop(user_id, None)
+        self._current_versions.pop(user_id, None)
+        self._expires_at.pop(user_id, None)
 

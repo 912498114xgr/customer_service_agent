@@ -13,6 +13,11 @@ local sequence = redis.call('INCR', KEYS[1])
 local version = string.format('%08d', sequence) .. '-' .. ARGV[2]
 redis.call('SET', KEYS[2], ARGV[1])
 redis.call('HSET', KEYS[3], version, ARGV[1])
+if tonumber(ARGV[3]) and tonumber(ARGV[3]) > 0 then
+    redis.call('EXPIRE', KEYS[1], ARGV[3])
+    redis.call('EXPIRE', KEYS[2], ARGV[3])
+    redis.call('EXPIRE', KEYS[3], ARGV[3])
+end
 return version
 """
 
@@ -27,9 +32,10 @@ return payload
 
 
 class RedisMemoryStore(MemoryStore):
-    def __init__(self, client: Redis, *, key_prefix: str = "customer-care") -> None:
+    def __init__(self, client: Redis, *, key_prefix: str = "customer-care", ttl_seconds: int | None = None) -> None:
         self._client = client
         self._key_prefix = key_prefix
+        self._ttl_seconds = ttl_seconds
 
     def _keys(self, user_id: str) -> tuple[str, str, str]:
         safe_user_id = quote(user_id, safe="")
@@ -58,6 +64,7 @@ class RedisMemoryStore(MemoryStore):
             versions_key,
             payload,
             digest,
+            str(self._ttl_seconds or 0),
         )
         return result.decode("utf-8") if isinstance(result, bytes) else str(result)
 

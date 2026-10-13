@@ -32,6 +32,9 @@ class Settings(BaseSettings):
         le=5,
         validation_alias=AliasChoices("LLM_MAX_RETRIES", "OPENAI_MAX_RETRIES"),
     )
+    memory_ttl_seconds: int = Field(default=86400, gt=0, le=2592000)
+    memory_max_messages: int = Field(default=16, ge=2, le=100)
+    memory_max_chars: int = Field(default=6000, ge=200, le=100000)
     redis_url: str = "redis://localhost:6379/0"
     k8s_context: str | None = None
 

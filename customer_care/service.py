@@ -6,14 +6,16 @@ from common.llm import LLMClient
 from customer_care.graph import build_customer_care_graph
 from customer_care.memory.base import MemoryStore
 from customer_care.memory.in_memory import InMemoryMemoryStore
+from customer_care.memory.policy import MemoryPolicy, compact_state
 from customer_care.state import CareState
 
 
 class CustomerCareService:
     """客服会话编排服务；每次请求都从记忆加载并保存完整状态。"""
 
-    def __init__(self, llm: LLMClient, memory: MemoryStore | None = None) -> None:
-        self._memory = memory or InMemoryMemoryStore()
+    def __init__(self, llm: LLMClient, memory: MemoryStore | None = None, *, memory_policy: MemoryPolicy | None = None) -> None:
+        self._memory_policy = memory_policy or MemoryPolicy()
+        self._memory = memory or InMemoryMemoryStore(ttl_seconds=self._memory_policy.ttl_seconds)
         self._graph = build_customer_care_graph(llm)
 
     async def chat(self, user_id: str, content: str) -> tuple[CareState, dict[str, Any]]:
@@ -22,10 +24,11 @@ class CustomerCareService:
         if not content:
             raise ValueError("用户消息不能为空")
 
-        state = await self._memory.load(user_id)
+        state = compact_state(await self._memory.load(user_id), self._memory_policy)
         state.messages.append({"role": "user", "content": content})
         result = CareState.model_validate(await self._graph.ainvoke(state.model_dump()))
         result.messages.append({"role": "assistant", "content": result.answer or ""})
+        result = compact_state(result, self._memory_policy)
         version = await self._memory.save(user_id, result)
         return result, {
             "version": version,
