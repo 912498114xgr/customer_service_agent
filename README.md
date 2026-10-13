@@ -1,6 +1,6 @@
 # Agent Rebuild
 
-用 Python + LangGraph 重实现两个本地可验证的 Agent 垂直切片。当前完成客服切片 T1-T10；诊断切片尚未开始。
+用 Python + LangGraph 重实现两个本地可验证的 Agent 垂直切片。当前完成客服切片 T1-T17；诊断切片尚未开始。
 
 ## 环境准备
 
@@ -20,6 +20,15 @@ uv run python -m customer_care.self_test
 ```
 
 自测覆盖退款咨询端到端链路、规则质检和理赔金额上限。默认使用离线 LLM Mock 和本地固定工具结果，不访问外部模型、Redis、订单或支付系统。
+
+服务化体验需要额外 Web 依赖：
+
+```powershell
+uv sync --extra web
+uv run uvicorn customer_care.api:create_app --factory --reload
+```
+
+API 端点为 `/health`、`POST /v1/chat` 和 `/v1/chat/{user_id}/stream`；工作台文件在 `customer_care/web/index.html`。当前环境的网络权限未完成 FastAPI/uvicorn 下载，核心离线测试不依赖它们。
 
 ## 路由评测基线
 
@@ -89,4 +98,5 @@ tests/                          离线单测与端到端测试
 - 语言识别、意图识别和最终回复仍没有真实标注集指标；T10 已接入真实模型客户端，但当前只有工具粗筛的离线路由基线，不能代表端到端 Agent 准确率。
 - 图本身未配置 LangGraph checkpointer；多轮持久化由上层调用者读取/保存 `CareState` 到 MemoryStore。
 - 理赔模块是方案建议原型，不替代财务、风控或合规审批。
+- FastAPI/SSE、静态工作台和结构化观测代码已加入，但 API 依赖、Redis、真实模型和生产业务 API 仍需在目标环境单独做集成验证。
 

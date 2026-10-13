@@ -1,6 +1,7 @@
 """把状态图、会话记忆和用户输入组合成可调用的客服服务。"""
 
 from typing import Any
+from uuid import uuid4
 
 from common.llm import LLMClient
 from customer_care.graph import build_customer_care_graph
@@ -8,6 +9,7 @@ from customer_care.memory.base import MemoryStore
 from customer_care.memory.in_memory import InMemoryMemoryStore
 from customer_care.memory.policy import MemoryPolicy, compact_state
 from customer_care.state import CareState
+from common.observability import RequestMetrics, log_event
 
 
 class CustomerCareService:
@@ -24,13 +26,22 @@ class CustomerCareService:
         if not content:
             raise ValueError("用户消息不能为空")
 
+        metrics = RequestMetrics(request_id=uuid4().hex)
+        metrics.node("load_memory")
         state = compact_state(await self._memory.load(user_id), self._memory_policy)
         state.messages.append({"role": "user", "content": content})
+        metrics.node("customer_care_graph")
         result = CareState.model_validate(await self._graph.ainvoke(state.model_dump()))
         result.messages.append({"role": "assistant", "content": result.answer or ""})
         result = compact_state(result, self._memory_policy)
+        metrics.node("save_memory")
         version = await self._memory.save(user_id, result)
+        metrics.output_chars = len(result.answer or "")
+        metrics_data = metrics.finish()
+        log_event("customer_care_request", request_id=metrics_data["request_id"], user_id=user_id, route=result.route, **{key: value for key, value in metrics_data.items() if key != "request_id"})
         return result, {
+            "request_id": metrics_data["request_id"],
+            "metrics": metrics_data,
             "version": version,
             "language": result.language,
             "intent": result.intent,
