@@ -9,7 +9,7 @@ from customer_care.memory.base import MemoryStore
 from customer_care.memory.in_memory import InMemoryMemoryStore
 from customer_care.memory.policy import MemoryPolicy, compact_state
 from customer_care.state import CareState
-from common.observability import RequestMetrics, log_event
+from common.observability import ObservedLLM, RequestMetrics, log_event, observe_request
 
 
 class CustomerCareService:
@@ -18,7 +18,7 @@ class CustomerCareService:
     def __init__(self, llm: LLMClient, memory: MemoryStore | None = None, *, memory_policy: MemoryPolicy | None = None) -> None:
         self._memory_policy = memory_policy or MemoryPolicy()
         self._memory = memory or InMemoryMemoryStore(ttl_seconds=self._memory_policy.ttl_seconds)
-        self._graph = build_customer_care_graph(llm)
+        self._graph = build_customer_care_graph(ObservedLLM(llm))
 
     async def chat(self, user_id: str, content: str) -> tuple[CareState, dict[str, Any]]:
         """处理一条用户消息，返回最终状态和便于学习的决策轨迹。"""
@@ -31,12 +31,13 @@ class CustomerCareService:
         state = compact_state(await self._memory.load(user_id), self._memory_policy)
         state.messages.append({"role": "user", "content": content})
         metrics.node("customer_care_graph")
-        result = CareState.model_validate(await self._graph.ainvoke(state.model_dump()))
+        with observe_request(metrics):
+            result = CareState.model_validate(await self._graph.ainvoke(state.model_dump()))
         result.messages.append({"role": "assistant", "content": result.answer or ""})
         result = compact_state(result, self._memory_policy)
         metrics.node("save_memory")
         version = await self._memory.save(user_id, result)
-        metrics.output_chars = len(result.answer or "")
+        metrics.response_chars = len(result.answer or "")
         metrics_data = metrics.finish()
         log_event("customer_care_request", request_id=metrics_data["request_id"], user_id=user_id, route=result.route, **{key: value for key, value in metrics_data.items() if key != "request_id"})
         return result, {

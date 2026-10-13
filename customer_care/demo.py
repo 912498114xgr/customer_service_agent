@@ -19,7 +19,7 @@ _SCENARIOS = {
     },
     "conflict": {
         "title": "矛盾指令先澄清",
-        "query": "Cancel order A-17, but keep it active",
+        "query": "Cancel order A-17, but keep order A-17 active",
         "description": "观察冲突标志如何在 Planner 和工具执行前截断流程。模型输出是固定脚本。",
         "responses": [
             '{"intent":"order","entities":{"order_id":"A-17"},"emotion":"neutral","confidence":0.96,"goals":[{"intent":"order","objective":"取消订单"},{"intent":"order","objective":"保持订单有效"}],"conflict":true,"needs_clarification":true}',

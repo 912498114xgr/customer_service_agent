@@ -5,6 +5,7 @@ from typing import Any
 from langgraph.graph import END, START, StateGraph
 
 from common.llm import LLMClient, create_llm_client
+from common.observability import observe_node
 from customer_care.nodes.conversation import clarify, human_handoff, reply, route_decision, self_service
 from customer_care.nodes.intent import recognize_intent
 from customer_care.nodes.language import detect_language
@@ -37,17 +38,20 @@ def build_customer_care_graph(
     graph.add_node("detect_language", detect_language)
 
     async def intent_node(raw_state: dict[str, Any]) -> dict[str, object]:
-        return await recognize_intent(CareState.model_validate(raw_state), llm)
+        with observe_node("recognize_intent"):
+            return await recognize_intent(CareState.model_validate(raw_state), llm)
 
     async def rewrite_node(raw_state: dict[str, Any]) -> dict[str, object]:
-        return await rewrite_query(CareState.model_validate(raw_state), llm)
+        with observe_node("rewrite_query"):
+            return await rewrite_query(CareState.model_validate(raw_state), llm)
 
     def routing_node(raw_state: dict[str, Any]) -> dict[str, str]:
         return route_decision(CareState.model_validate(raw_state))
 
     async def plan_tasks_node(raw_state: dict[str, Any]) -> dict[str, object]:
         state = CareState.model_validate(raw_state)
-        decision = await planner.plan(state)
+        with observe_node("plan_tasks"):
+            decision = await planner.plan(state)
         if decision.plan is None or decision.needs_clarification:
             return {
                 "route": "clarify",
@@ -64,7 +68,8 @@ def build_customer_care_graph(
             return {"execution_status": "failed", "route": "human"}
 
         async def replan_task(task: Any, error: str):
-            decision = await planner.replan(state, task, error)
+            with observe_node("replan_task"):
+                decision = await planner.replan(state, task, error)
             if decision.needs_clarification:
                 return None
             return decision.plan
@@ -99,13 +104,15 @@ def build_customer_care_graph(
         return human_handoff(CareState.model_validate(raw_state))
 
     async def tool_router_node(raw_state: dict[str, Any]) -> dict[str, object]:
-        return await router.select(CareState.model_validate(raw_state))
+        with observe_node("skill_router"):
+            return await router.select(CareState.model_validate(raw_state))
 
     async def self_service_node(raw_state: dict[str, Any]) -> dict[str, object]:
         return await self_service(CareState.model_validate(raw_state), registry)
 
     async def reply_node(raw_state: dict[str, Any]) -> dict[str, str]:
-        return await reply(CareState.model_validate(raw_state), llm)
+        with observe_node("reply"):
+            return await reply(CareState.model_validate(raw_state), llm)
 
     def knowledge_node(raw_state: dict[str, Any]) -> dict[str, object]:
         state = CareState.model_validate(raw_state)

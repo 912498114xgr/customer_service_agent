@@ -20,18 +20,22 @@ def test_multi_skill_demo_runs_main_graph_and_local_tools() -> None:
     assert state.execution_status == "succeeded"
     assert {result["tool_name"] for result in state.task_results} == {"get_order_status", "get_order_receipt"}
     assert trace["intent_goals"]
+    assert trace["metrics"]["llm_calls"] == 3
+    assert {span["node"] for span in trace["metrics"]["llm_spans"]} == {"recognize_intent", "plan_tasks", "reply"}
 
 
 def test_conflict_demo_stops_before_planner_or_tools() -> None:
     service = CustomerCareService(create_scenario_llm("conflict"))
 
-    state, _ = asyncio.run(service.chat("demo", "Cancel order A-17, but keep it active"))
+    state, trace = asyncio.run(service.chat("demo", "Cancel order A-17, but keep order A-17 active"))
 
     assert state.route == "clarify"
     assert state.intent_conflict is True
     assert state.task_plan is None
     assert state.task_results == []
     assert state.selected_tool is None
+    assert trace["metrics"]["llm_calls"] == 2
+    assert [span["node"] for span in trace["metrics"]["llm_spans"]] == ["recognize_intent", "reply"]
 
 
 def test_invalid_intent_demo_fails_closed() -> None:
