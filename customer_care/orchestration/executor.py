@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import Any
 
 from customer_care.orchestration.models import ExecutionReport, SkillTask, TaskPlan, TaskResult
+from customer_care.orchestration.result_validation import ToolResultError, validate_task_contract, validate_tool_result
 from customer_care.tools.registry import ToolCatalog, ToolRegistry
 
 _LOGGER = logging.getLogger(__name__)
@@ -74,27 +75,70 @@ class MultiSkillExecutor:
                     errors.append("计划无法继续：存在未满足的依赖")
                 break
             batch = await asyncio.gather(*(self._run_task(task, request_id) for task in ready))
+            failed_batch: list[tuple[SkillTask, TaskResult]] = []
             for task, result in zip(ready, batch):
                 results[task.task_id] = result
                 remaining.pop(task.task_id)
                 if result.status == "failed":
                     errors.append(result.error or f"任务 {task.task_id} 失败")
-                    if replan and replan_count < max_replans:
-                        replan_count += 1
-                        try:
-                            new_plan = await replan(task, result.error or "未知错误")
-                            if isinstance(new_plan, TaskPlan):
-                                replanned = await self.execute(
-                                    new_plan,
-                                    request_id=request_id,
-                                    confirmed=confirmed,
-                                    max_replans=max_replans - replan_count,
-                                    replan=replan,
-                                )
-                            replanned.replan_count += replan_count
-                            return replanned
-                        except Exception as exc:
-                            errors.append(f"重规划失败：{exc}")
+                    failed_batch.append((task, result))
+            for task, result in failed_batch:
+                try:
+                    tool = self._catalog.get(task.tool_name)
+                except ValueError:
+                    tool = None
+                can_replan = (
+                    replan is not None
+                    and replan_count < max_replans
+                    and not task.requires_confirmation
+                    and tool is not None
+                    and not tool.side_effect
+                    and result.failure_code in {"timeout", "tool_error", "invalid_result", "target_mismatch", "invalid_plan"}
+                )
+                if not can_replan:
+                    continue
+                replan_count += 1
+                try:
+                    new_plan = await replan(task, f"{result.failure_code}: {result.error or '未知错误'}")
+                    if not isinstance(new_plan, TaskPlan):
+                        continue
+                    if (
+                        len(new_plan.tasks) != 1
+                        or new_plan.tasks[0].task_id != task.task_id
+                        or new_plan.tasks[0].intent != task.intent
+                        or new_plan.tasks[0].capability != task.capability
+                    ):
+                        errors.append("重规划被拒绝：只能替换同一任务目标下的单个等价 Skill")
+                        continue
+                    replanned = await self.execute(
+                        new_plan,
+                        request_id=request_id,
+                        confirmed=confirmed,
+                        max_replans=max_replans - replan_count,
+                        replan=replan,
+                    )
+                    combined = {item.task_id: item for item in results.values()}
+                    combined.update({item.task_id: item for item in replanned.results})
+                    ordered_results = [combined[item.task_id] for item in plan.tasks if item.task_id in combined]
+                    original_ids = {task.task_id for task in plan.tasks}
+                    ordered_results.extend(item for task_id, item in combined.items() if task_id not in original_ids)
+                    statuses = {item.status for item in ordered_results}
+                    if statuses and statuses <= {"succeeded", "cached"}:
+                        status = "cached" if statuses == {"cached"} else "succeeded"
+                    elif statuses and statuses <= {"failed"}:
+                        status = "failed"
+                    else:
+                        status = "partial"
+                    return ExecutionReport(
+                        status=status,
+                        results=ordered_results,
+                        replan_count=replan_count + replanned.replan_count,
+                        executed_task_ids=[item.task_id for item in ordered_results if item.status in {"succeeded", "cached"}],
+                        skipped_task_ids=[item.task_id for item in ordered_results if item.status == "skipped"],
+                        errors=errors + replanned.errors,
+                    )
+                except Exception as exc:
+                    errors.append(f"重规划失败：{exc}")
 
         ordered = [results[task.task_id] for task in plan.tasks if task.task_id in results]
         status = "succeeded" if ordered and all(item.status in {"succeeded", "cached"} for item in ordered) else "partial"
@@ -113,13 +157,14 @@ class MultiSkillExecutor:
 
     async def _run_task(self, task: SkillTask, request_id: str) -> TaskResult:
         key = self._key(request_id, task)
+        try:
+            validate_task_contract(task, self._catalog)
+            self._validate_arguments(task)
+        except (ToolResultError, ValueError) as exc:
+            return TaskResult(task_id=task.task_id, tool_name=task.tool_name, status="failed", failure_code="invalid_plan", error=str(exc), idempotency_key=key)
         cached = self._cache.get(key)
         if cached:
             return cached.model_copy(update={"status": "cached"})
-        try:
-            self._validate_arguments(task)
-        except ValueError as exc:
-            return TaskResult(task_id=task.task_id, tool_name=task.tool_name, status="failed", error=str(exc), idempotency_key=key)
 
         attempts = 0
         while attempts < task.max_attempts:
@@ -129,16 +174,21 @@ class MultiSkillExecutor:
                     asyncio.to_thread(self._registry.execute, task.tool_name, task.arguments),
                     timeout=task.timeout_seconds,
                 )
-                if not isinstance(output, dict):
-                    raise ValueError("工具结果必须是对象")
+                output = validate_tool_result(task, output, self._catalog)
                 result = TaskResult(task_id=task.task_id, tool_name=task.tool_name, status="succeeded", output=output, attempts=attempts, idempotency_key=key)
                 self._cache[key] = result
                 return result
+            except ToolResultError as exc:
+                _LOGGER.warning("Skill 结果校验失败 task=%s code=%s", task.task_id, exc.code)
+                return TaskResult(task_id=task.task_id, tool_name=task.tool_name, status="failed", failure_code=exc.code, error=str(exc)[:200], attempts=attempts, idempotency_key=key)
+            except TimeoutError:
+                if attempts >= task.max_attempts:
+                    return TaskResult(task_id=task.task_id, tool_name=task.tool_name, status="failed", failure_code="timeout", error="tool timeout", attempts=attempts, idempotency_key=key)
             except Exception as exc:
                 if attempts >= task.max_attempts:
-                    error = "tool timeout" if isinstance(exc, TimeoutError) else str(exc)[:200]
+                    error = str(exc)[:200]
                     _LOGGER.warning("Skill 执行失败 task=%s error=%s", task.task_id, error)
-                    return TaskResult(task_id=task.task_id, tool_name=task.tool_name, status="failed", error=error, attempts=attempts, idempotency_key=key)
+                    return TaskResult(task_id=task.task_id, tool_name=task.tool_name, status="failed", failure_code="tool_error", error=error, attempts=attempts, idempotency_key=key)
         raise AssertionError("unreachable")
 
     def _validate_arguments(self, task: SkillTask) -> None:

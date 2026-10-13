@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ToolDefinition(BaseModel):
@@ -20,6 +20,16 @@ class ToolDefinition(BaseModel):
     side_effect: bool = False
     requires_confirmation: bool = False
     idempotency_required: bool = True
+    capability: str | None = None
+    task_intents: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def set_default_capability(self) -> "ToolDefinition":
+        if self.capability is None:
+            self.capability = self.name
+        if not self.task_intents:
+            self.task_intents = [self.capability]
+        return self
 
 
 class ToolCatalog:

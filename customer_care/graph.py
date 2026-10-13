@@ -70,10 +70,19 @@ def build_customer_care_graph(
         state = CareState.model_validate(raw_state)
         if not state.task_plan:
             return {"execution_status": "failed", "route": "human"}
+
+        async def replan_task(task: Any, error: str):
+            decision = await planner.replan(state, task, error)
+            if decision.needs_clarification:
+                return None
+            return decision.plan
+
         report = await executor.execute(
             planner_task_plan(state.task_plan),
             request_id=f"graph-{state.user_id}-{len(state.messages)}",
             confirmed=False,
+            max_replans=1,
+            replan=replan_task,
         )
         update: dict[str, object] = {
             "task_results": [item.model_dump(mode="json") for item in report.results],
@@ -86,6 +95,9 @@ def build_customer_care_graph(
         if report.status == "awaiting_confirmation":
             update["route"] = "human"
             update["handoff_summary"] = "多 Skill 计划包含需要用户确认的副作用操作。"
+        elif report.status in {"failed", "partial"}:
+            update["route"] = "human"
+            update["handoff_summary"] = "多 Skill 执行未能完整满足请求，需人工核对已完成与失败的任务。"
         return update
 
     def clarify_node(raw_state: dict[str, Any]) -> dict[str, str]:

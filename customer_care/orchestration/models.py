@@ -13,6 +13,7 @@ class SkillTask(BaseModel):
     task_id: str = Field(min_length=1, max_length=64)
     intent: str = Field(min_length=1, max_length=64)
     tool_name: str = Field(min_length=1, max_length=128)
+    capability: str | None = None
     arguments: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
     dependencies: list[str] = Field(default_factory=list)
     risk_level: Literal["low", "medium", "high"] = "low"
@@ -67,6 +68,7 @@ class TaskResult(BaseModel):
     task_id: str
     tool_name: str
     status: Literal["succeeded", "failed", "skipped", "awaiting_confirmation", "cached"]
+    failure_code: Literal["tool_error", "timeout", "invalid_result", "target_mismatch", "invalid_plan"] | None = None
     output: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
     attempts: int = 0

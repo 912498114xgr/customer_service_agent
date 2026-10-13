@@ -39,6 +39,7 @@ class _RawTask(BaseModel):
     task_id: str
     intent: str
     tool_name: str
+    capability: str
     arguments: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
     dependencies: list[str] = Field(default_factory=list)
 
@@ -62,10 +63,12 @@ class MultiSkillPlanner:
         query = state.rewritten_query or _latest_query(state)
         prompt = (
             "把用户请求拆成最少的客服 Skill 任务，只返回 JSON。\n"
-            '{"tasks":[{"task_id":"task-1","intent":"refund","tool_name":"get_refund_status",'
+            '{"tasks":[{"task_id":"task-1","intent":"get_refund_status","tool_name":"get_refund_status","capability":"get_refund_status",'
             '"arguments":{"order_id":"R-17"},"dependencies":[]}],"rationale":"...","confidence":0.0}\n'
             "独立只读查询可以并行；只有存在事实依赖时才填写 dependencies。"
-            "不能猜测缺失实体。只选择给定工具目录中的工具。\n"
+            "不能猜测缺失实体。只选择给定工具目录中的工具。capability 必须逐字使用该工具目录声明的 capability；"
+            "intent 必须是工具目录给出的 task_intents 之一，表示这个子任务的具体目标，不要只填宽泛领域。\n"
+            f"重规划约束：{state.context_summary or '无'}\n"
             f"用户问题：{query}\n当前意图：{state.intent}\n已知实体：{state.entities}\n工具目录：{self._tool_descriptions()}"
         )
         try:
@@ -79,14 +82,24 @@ class MultiSkillPlanner:
         return PlanningDecision(plan=plan, confidence=raw.confidence)
 
     async def replan(self, state: CareState, failed_task: SkillTask, error: str) -> PlanningDecision:
-        """为失败任务请求一次替代计划；调用者负责限制重规划次数。"""
-        replan_state = state.model_copy(update={"context_summary": f"任务 {failed_task.task_id} 失败：{error}"})
+        """为失败任务请求替代计划，并显式提供失败工具和原因。"""
+        replan_state = state.model_copy(update={
+            "context_summary": (
+                f"只修复 task_id={failed_task.task_id}，目标能力={failed_task.capability}；"
+                f"失败工具={failed_task.tool_name}，失败类型={error}。"
+                "保留同一用户目标，不要重复已成功的其他任务；若没有安全替代工具则返回低置信度并要求澄清。"
+            )
+        })
         return await self.plan(replan_state)
 
     def _build_plan(self, raw: _RawPlan, state: CareState) -> TaskPlan:
         tasks: list[SkillTask] = []
         for raw_task in raw.tasks:
             tool = self._catalog.get(raw_task.tool_name)
+            if raw_task.intent not in tool.task_intents:
+                raise ValueError(f"任务 {raw_task.task_id} 的目标意图不受工具支持")
+            if raw_task.capability != tool.capability:
+                raise ValueError(f"任务 {raw_task.task_id} 声明的能力与工具目录不一致")
             expected_category = _INTENT_CATEGORY.get(raw_task.intent)
             if expected_category and tool.category != expected_category:
                 raise ValueError(f"任务 {raw_task.task_id} 的意图与工具类别不匹配")
@@ -101,6 +114,7 @@ class MultiSkillPlanner:
                     task_id=raw_task.task_id,
                     intent=raw_task.intent,
                     tool_name=tool.name,
+                    capability=raw_task.capability,
                     arguments={key: value for key, value in arguments.items() if key in tool.argument_names},
                     dependencies=raw_task.dependencies,
                     risk_level=risk,
@@ -112,7 +126,7 @@ class MultiSkillPlanner:
 
     def _tool_descriptions(self) -> list[dict[str, Any]]:
         return [
-            {"name": tool.name, "category": tool.category, "description": tool.description, "arguments": tool.argument_names}
+            {"name": tool.name, "capability": tool.capability, "task_intents": tool.task_intents, "category": tool.category, "description": tool.description, "arguments": tool.argument_names}
             for tool in self._catalog.tools
         ]
 
