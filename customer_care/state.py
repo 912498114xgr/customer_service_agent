@@ -24,6 +24,7 @@ class CareState(BaseModel):
     execution_status: str | None = None
     awaiting_confirmation: bool = False
     replan_count: int = 0
+    multi_skill_requested: bool = False
     handoff_summary: str | None = None
     context_summary: str | None = None
     knowledge_context: str = ""

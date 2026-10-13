@@ -26,6 +26,8 @@ def route_decision(state: CareState) -> dict[str, str]:
     """按歧义、识别置信度和情绪选择澄清、自助或人工。"""
     if state.rewrite_ambiguous:
         return {"route": "clarify"}
+    if state.multi_skill_requested and state.intent_confidence >= 0.55:
+        return {"route": "multi_skill"}
     if state.intent is None or state.intent == "other":
         return {"route": "clarify"}
     if state.intent_confidence < 0.55 or state.emotion in {"frustrated", "angry", "upset"}:
@@ -66,6 +68,10 @@ async def reply(state: CareState, llm: LLMClient) -> dict[str, str]:
     """根据工具结果或人工摘要生成回复；模型异常时使用本地模板兜底。"""
     context: dict[str, Any] = {
         "tool_result": state.tool_result,
+        "task_plan": state.task_plan,
+        "task_results": state.task_results,
+        "execution_status": state.execution_status,
+        "awaiting_confirmation": state.awaiting_confirmation,
         "clarification": state.answer if state.route == "clarify" else None,
         "knowledge_context": state.knowledge_context,
         "knowledge_sources": state.knowledge_sources,

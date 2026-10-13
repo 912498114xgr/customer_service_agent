@@ -6,8 +6,9 @@ import pytest
 from customer_care.orchestration import MultiSkillExecutor, SkillTask, TaskPlan
 from customer_care.orchestration import MultiSkillPlanner
 from common.mock_llm import MockLLM
-from customer_care.state import CareState
 from customer_care.tools.registry import ToolRegistry
+from customer_care.graph import build_customer_care_graph
+from customer_care.state import CareState
 
 
 class RecordingRegistry(ToolRegistry):
@@ -111,3 +112,18 @@ def test_planner_marks_high_risk_side_effect() -> None:
     assert decision.plan is not None
     assert decision.plan.requires_confirmation is True
     assert decision.plan.tasks[0].risk_level == "high"
+
+
+def test_multi_skill_path_is_reachable_from_customer_care_graph() -> None:
+    llm = MockLLM([
+        '{"intent":"order","entities":{"order_id":"A"},"emotion":"neutral","confidence":0.95}',
+        '{"tasks":[{"task_id":"status","intent":"order","tool_name":"get_order_status","arguments":{"order_id":"A"},"dependencies":[]},{"task_id":"receipt","intent":"order","tool_name":"get_order_receipt","arguments":{"order_id":"A"},"dependencies":[]}],"rationale":"两个独立查询","confidence":0.95}',
+        "已完成订单状态和收据查询。",
+    ])
+    state = CareState(user_id="u1", messages=[{"role":"user", "content":"Check order A and show my receipt"}])
+
+    result = CareState.model_validate(asyncio.run(build_customer_care_graph(llm).ainvoke(state.model_dump())))
+
+    assert result.multi_skill_requested is True
+    assert result.execution_status == "succeeded"
+    assert {item["task_id"] for item in result.task_results} == {"status", "receipt"}
