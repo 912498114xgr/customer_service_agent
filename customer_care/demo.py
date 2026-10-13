@@ -26,6 +26,26 @@ _SCENARIOS = {
             "I found conflicting instructions. Should I cancel order A-17, or keep it active?",
         ],
     },
+    "side-effect": {
+        "title": "副作用工具需要确认",
+        "query": "Change my notification preference to weekly",
+        "description": "观察单 Skill 路径如何检查工具目录的确认要求，并在执行前暂停。实际注册表仍是本地演示数据。",
+        "responses": [
+            '{"intent":"account","entities":{},"emotion":"neutral","confidence":0.96,"goals":[{"intent":"account","objective":"更新通知频率"}],"conflict":false,"needs_clarification":false}',
+            '{"tool_name":"update_contact_preference","arguments":{"preference":"weekly"}}',
+            "This action needs your confirmation before it can be carried out.",
+        ],
+    },
+    "multi-confirmation": {
+        "title": "多 Skill 计划等待确认后恢复",
+        "query": "Request a review for refund R-17 and explain the refund policy",
+        "description": "观察含副作用任务的 DAG 在确认前整体暂停，确认后执行原计划。本地工具不会联系真实退款系统。",
+        "responses": [
+            '{"intent":"refund","entities":{"order_id":"R-17"},"emotion":"neutral","confidence":0.96,"goals":[{"intent":"refund","objective":"申请人工复核退款"},{"intent":"refund","objective":"了解退款政策"}],"conflict":false,"needs_clarification":false}',
+            '{"tasks":[{"task_id":"review","intent":"create_refund_review_ticket","tool_name":"create_refund_review_ticket","capability":"create_refund_review_ticket","arguments":{"order_id":"R-17","reason":"customer requested review"},"dependencies":[]},{"task_id":"policy","intent":"get_refund_policy","tool_name":"get_refund_policy","capability":"get_refund_policy","arguments":{},"dependencies":[]}],"rationale":"一个待确认复核请求和一个只读政策查询","confidence":0.96}',
+            "This plan contains a review request and a read-only policy lookup. It needs confirmation before execution.",
+        ],
+    },
     "invalid-intent": {
         "title": "结构化意图输出损坏时安全降级",
         "query": "Where is order A-17?",

@@ -90,7 +90,7 @@ def build_customer_care_graph(
         if report.status in {"succeeded", "partial", "cached"}:
             update["route"] = "multi_skill"
         if report.status == "awaiting_confirmation":
-            update["route"] = "human"
+            update["route"] = "awaiting_confirmation"
             update["handoff_summary"] = "多 Skill 计划包含需要用户确认的副作用操作。"
         elif report.status in {"failed", "partial"}:
             update["route"] = "human"

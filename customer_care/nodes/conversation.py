@@ -70,9 +70,34 @@ def human_handoff(state: CareState) -> dict[str, str]:
 
 
 async def self_service(state: CareState, registry: ToolRegistry) -> dict[str, Any]:
-    """只调用本地工具注册表，并把结果写回状态。"""
+    """只执行只读工具；有副作用的工具转换为待确认计划。"""
     if not state.selected_tool:
         return {"tool_result": {"status": "not_executed", "reason": "missing_tool"}}
+    try:
+        tool = registry.catalog.get(state.selected_tool)
+    except ValueError as exc:
+        return {"tool_result": {"status": "not_executed", "reason": str(exc)}}
+    if tool.requires_confirmation or tool.side_effect:
+        from customer_care.orchestration.models import SkillTask, TaskPlan
+
+        task = SkillTask(
+            task_id=f"single-{tool.name}",
+            intent=tool.task_intents[0],
+            tool_name=tool.name,
+            capability=tool.capability,
+            arguments={key: value for key, value in state.tool_args.items() if key in tool.argument_names},
+            risk_level="high",
+            requires_confirmation=True,
+            max_attempts=1,
+        )
+        plan = TaskPlan(tasks=[task], requires_confirmation=True, rationale="单 Skill 工具目录要求用户确认")
+        return {
+            "task_plan": plan.model_dump(mode="json"),
+            "execution_status": "awaiting_confirmation",
+            "awaiting_confirmation": True,
+            "tool_result": {"status": "awaiting_confirmation", "tool_name": tool.name},
+            "route": "awaiting_confirmation",
+        }
     try:
         result = registry.execute(state.selected_tool, state.tool_args)
     except ValueError as exc:
@@ -109,6 +134,8 @@ async def reply(state: CareState, llm: LLMClient) -> dict[str, str]:
 
 
 def _fallback_reply(state: CareState) -> str:
+    if state.awaiting_confirmation:
+        return "This action needs your confirmation before it can be carried out."
     if state.route == "clarify":
         return _CLARIFY_TEXT.get(state.language, _CLARIFY_TEXT["en"])
     if state.route == "human":

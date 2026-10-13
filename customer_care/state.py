@@ -26,6 +26,10 @@ class CareState(BaseModel):
     task_results: list[dict[str, Any]] = Field(default_factory=list)
     execution_status: str | None = None
     awaiting_confirmation: bool = False
+    confirmation_id: str | None = None
+    confirmation_token_hash: str | None = None
+    confirmation_expires_at: float | None = None
+    confirmation_status: str | None = None
     replan_count: int = 0
     multi_skill_requested: bool = False
     handoff_summary: str | None = None

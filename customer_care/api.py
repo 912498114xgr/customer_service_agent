@@ -24,10 +24,14 @@ def create_app(service: CustomerCareService | None = None) -> Any:
     app = FastAPI(title="Customer Service Agent", version="0.1.0")
     settings = Settings()
     service = service or CustomerCareService(create_llm_client(settings))
+    demo_services: dict[str, CustomerCareService] = {}
 
     class ChatRequest(BaseModel):
         user_id: str = Field(min_length=1, max_length=128)
         content: str = Field(min_length=1, max_length=4000)
+
+    class ConfirmationRequest(BaseModel):
+        token: str = Field(min_length=32, max_length=256)
 
     @app.get("/", include_in_schema=False)
     async def workbench() -> FileResponse:
@@ -54,20 +58,69 @@ def create_app(service: CustomerCareService | None = None) -> Any:
         scenario = scenarios_by_id.get(scenario_id)
         if scenario is None:
             raise HTTPException(status_code=404, detail="演练场景不存在")
-        demo_service = CustomerCareService(create_scenario_llm(scenario_id))
-        state, trace = await demo_service.chat(f"scripted-demo-{scenario_id}", scenario["query"])
+        if scenario_id not in demo_services:
+            demo_services[scenario_id] = CustomerCareService(create_scenario_llm(scenario_id))
+        demo_service = demo_services[scenario_id]
+        try:
+            state, trace = await demo_service.chat(f"scripted-demo-{scenario_id}", scenario["query"])
+        except ValueError as exc:
+            status_code = getattr(exc, "status_code", 400)
+            raise HTTPException(status_code=status_code, detail=str(exc)) from exc
         return {
             "answer": state.answer,
             "trace": trace,
             "demo": {"mode": "scripted_mock", **scenario},
         }
 
+    @app.post("/v1/demo/{scenario_id}/confirm")
+    async def confirm_demo(scenario_id: str, request: ConfirmationRequest) -> dict[str, Any]:
+        demo_service = demo_services.get(scenario_id)
+        if demo_service is None:
+            raise HTTPException(status_code=404, detail="没有该场景的待确认演练")
+        try:
+            state, trace = await demo_service.confirm_action(f"scripted-demo-{scenario_id}", request.token)
+        except ValueError as exc:
+            status_code = getattr(exc, "status_code", 400)
+            raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+        return {"answer": state.answer, "trace": trace, "demo": {"mode": "scripted_mock", "id": scenario_id}}
+
+    @app.post("/v1/demo/{scenario_id}/cancel")
+    async def cancel_demo(scenario_id: str, request: ConfirmationRequest) -> dict[str, Any]:
+        demo_service = demo_services.get(scenario_id)
+        if demo_service is None:
+            raise HTTPException(status_code=404, detail="没有该场景的待确认演练")
+        try:
+            state, trace = await demo_service.cancel_action(f"scripted-demo-{scenario_id}", request.token)
+        except ValueError as exc:
+            status_code = getattr(exc, "status_code", 400)
+            raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+        return {"answer": state.answer, "trace": trace, "demo": {"mode": "scripted_mock", "id": scenario_id}}
+
     @app.post("/v1/chat")
     async def chat(request: ChatRequest) -> dict[str, Any]:
         try:
             state, trace = await service.chat(request.user_id, request.content)
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            status_code = getattr(exc, "status_code", 400)
+            raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+        return {"answer": state.answer, "trace": trace}
+
+    @app.post("/v1/chat/{user_id}/confirm")
+    async def confirm(user_id: str, request: ConfirmationRequest) -> dict[str, Any]:
+        try:
+            state, trace = await service.confirm_action(user_id, request.token)
+        except ValueError as exc:
+            status_code = getattr(exc, "status_code", 400)
+            raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+        return {"answer": state.answer, "trace": trace}
+
+    @app.post("/v1/chat/{user_id}/cancel")
+    async def cancel(user_id: str, request: ConfirmationRequest) -> dict[str, Any]:
+        try:
+            state, trace = await service.cancel_action(user_id, request.token)
+        except ValueError as exc:
+            status_code = getattr(exc, "status_code", 400)
+            raise HTTPException(status_code=status_code, detail=str(exc)) from exc
         return {"answer": state.answer, "trace": trace}
 
     @app.get("/v1/chat/{user_id}/stream")
