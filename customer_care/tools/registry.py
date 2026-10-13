@@ -17,6 +17,9 @@ class ToolDefinition(BaseModel):
     pos_examples: list[str]
     neg_examples: list[str]
     argument_names: list[str]
+    side_effect: bool = False
+    requires_confirmation: bool = False
+    idempotency_required: bool = True
 
 
 class ToolCatalog:

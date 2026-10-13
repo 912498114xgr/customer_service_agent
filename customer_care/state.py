@@ -19,6 +19,11 @@ class CareState(BaseModel):
     selected_tool: str | None = None
     tool_args: dict[str, Any] = Field(default_factory=dict)
     tool_result: dict[str, Any] = Field(default_factory=dict)
+    task_plan: dict[str, Any] | None = None
+    task_results: list[dict[str, Any]] = Field(default_factory=list)
+    execution_status: str | None = None
+    awaiting_confirmation: bool = False
+    replan_count: int = 0
     handoff_summary: str | None = None
     context_summary: str | None = None
     knowledge_context: str = ""
