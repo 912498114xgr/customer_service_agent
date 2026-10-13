@@ -18,6 +18,7 @@ class SkillTask(BaseModel):
     risk_level: Literal["low", "medium", "high"] = "low"
     requires_confirmation: bool = False
     max_attempts: int = Field(default=1, ge=1, le=3)
+    timeout_seconds: float = Field(default=5.0, gt=0, le=60)
 
 
 class TaskPlan(BaseModel):

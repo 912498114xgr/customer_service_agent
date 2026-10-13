@@ -21,6 +21,11 @@ class MultiSkillExecutor:
         self._catalog = catalog or self._registry.catalog
         self._cache: dict[str, TaskResult] = {}
 
+    @property
+    def cache_size(self) -> int:
+        """返回当前幂等缓存条目数量，供观测和测试使用。"""
+        return len(self._cache)
+
     async def execute(
         self,
         plan: TaskPlan,
@@ -79,13 +84,15 @@ class MultiSkillExecutor:
                         try:
                             new_plan = await replan(task, result.error or "未知错误")
                             if isinstance(new_plan, TaskPlan):
-                                return await self.execute(
+                                replanned = await self.execute(
                                     new_plan,
                                     request_id=request_id,
                                     confirmed=confirmed,
                                     max_replans=max_replans - replan_count,
                                     replan=replan,
                                 )
+                            replanned.replan_count += replan_count
+                            return replanned
                         except Exception as exc:
                             errors.append(f"重规划失败：{exc}")
 
@@ -118,7 +125,10 @@ class MultiSkillExecutor:
         while attempts < task.max_attempts:
             attempts += 1
             try:
-                output = await asyncio.to_thread(self._registry.execute, task.tool_name, task.arguments)
+                output = await asyncio.wait_for(
+                    asyncio.to_thread(self._registry.execute, task.tool_name, task.arguments),
+                    timeout=task.timeout_seconds,
+                )
                 if not isinstance(output, dict):
                     raise ValueError("工具结果必须是对象")
                 result = TaskResult(task_id=task.task_id, tool_name=task.tool_name, status="succeeded", output=output, attempts=attempts, idempotency_key=key)
@@ -126,8 +136,9 @@ class MultiSkillExecutor:
                 return result
             except Exception as exc:
                 if attempts >= task.max_attempts:
-                    _LOGGER.warning("Skill 执行失败 task=%s error=%s", task.task_id, str(exc)[:200])
-                    return TaskResult(task_id=task.task_id, tool_name=task.tool_name, status="failed", error=str(exc)[:200], attempts=attempts, idempotency_key=key)
+                    error = "tool timeout" if isinstance(exc, TimeoutError) else str(exc)[:200]
+                    _LOGGER.warning("Skill 执行失败 task=%s error=%s", task.task_id, error)
+                    return TaskResult(task_id=task.task_id, tool_name=task.tool_name, status="failed", error=error, attempts=attempts, idempotency_key=key)
         raise AssertionError("unreachable")
 
     def _validate_arguments(self, task: SkillTask) -> None:

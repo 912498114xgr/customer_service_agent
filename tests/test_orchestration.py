@@ -65,6 +65,20 @@ def test_failed_dependency_skips_downstream_task() -> None:
     assert {item.task_id: item.status for item in report.results} == {"status": "failed", "refund": "skipped"}
 
 
+def test_tool_timeout_is_reported_and_downstream_is_not_executed() -> None:
+    registry = RecordingRegistry(delay=0.2)
+    plan = TaskPlan(tasks=[
+        SkillTask(task_id="status", intent="order", tool_name="get_order_status", arguments={"order_id": "A"}, timeout_seconds=0.05),
+        SkillTask(task_id="refund", intent="refund", tool_name="check_refund_eligibility", arguments={"order_id": "A"}, dependencies=["status"]),
+    ])
+
+    report = asyncio.run(MultiSkillExecutor(registry).execute(plan, request_id="timeout"))
+
+    assert report.results[0].status == "failed"
+    assert "Timeout" in (report.results[0].error or "") or "timeout" in (report.results[0].error or "").lower()
+    assert report.results[1].status == "skipped"
+
+
 def test_same_request_is_idempotent() -> None:
     registry = RecordingRegistry()
     executor = MultiSkillExecutor(registry)
