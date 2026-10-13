@@ -11,6 +11,7 @@ from customer_care.nodes.language import detect_language
 from customer_care.nodes.rewrite import rewrite_query
 from customer_care.knowledge import KnowledgeRetriever
 from customer_care.orchestration import MultiSkillExecutor, MultiSkillPlanner
+from customer_care.orchestration.detection import is_multi_task_request
 from customer_care.state import CareState
 from customer_care.tools.registry import ToolRegistry
 from customer_care.tools.router import ToolRouter
@@ -50,8 +51,7 @@ def build_customer_care_graph(
         query = (state.rewritten_query or "").lower()
         if not query:
             query = " ".join(str(message.get("content", "")) for message in state.messages[-1:]).lower()
-        markers = (" and ", " also ", " plus ", "同时", "以及", "另外", "如果", " then ")
-        return {"multi_skill_requested": any(marker in query for marker in markers)}
+        return {"multi_skill_requested": is_multi_task_request(query)}
 
     async def plan_tasks_node(raw_state: dict[str, Any]) -> dict[str, object]:
         state = CareState.model_validate(raw_state)
