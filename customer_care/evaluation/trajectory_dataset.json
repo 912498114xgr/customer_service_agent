@@ -1,0 +1,10 @@
+[
+  {"id":"refund-clear","query":"Where is my refund for order R-17?","intent":"refund","route":"self_service","expected_tool":"get_refund_status","entities":{"order_id":"R-17"},"emotion":"neutral"},
+  {"id":"delivery-clear","query":"Where is my food for order D-3?","intent":"track_order","route":"self_service","expected_tool":"get_delivery_status","entities":{"order_id":"D-3"},"emotion":"neutral"},
+  {"id":"coupon-clear","query":"Why can't I use coupon C-9?","intent":"coupon","route":"self_service","expected_tool":"check_coupon_eligibility","entities":{"coupon_id":"C-9"},"emotion":"neutral"},
+  {"id":"account-clear","query":"I cannot access my account","intent":"account","route":"self_service","expected_tool":"report_account_access_issue","entities":{},"emotion":"neutral"},
+  {"id":"angry-handoff","query":"I am furious about my refund for order R-18","intent":"refund","route":"human","expected_tool":null,"entities":{"order_id":"R-18"},"emotion":"angry"},
+  {"id":"low-confidence-handoff","query":"Help me with something","intent":"other","route":"clarify","expected_tool":null,"entities":{},"emotion":"neutral"},
+  {"id":"ambiguous-clarify","query":"What about that?","intent":"other","route":"clarify","expected_tool":null,"entities":{},"emotion":"neutral"},
+  {"id":"refund-spanish","query":"¿Dónde está mi reembolso del pedido R-19?","intent":"refund","route":"self_service","expected_tool":"get_refund_status","entities":{"order_id":"R-19"},"emotion":"neutral"}
+]

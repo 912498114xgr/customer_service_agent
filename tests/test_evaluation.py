@@ -1,4 +1,5 @@
 from customer_care.evaluation.runner import evaluate_dataset, evaluate_route_policy, load_dataset
+from customer_care.evaluation.trajectory import evaluate_trajectory, load_trajectory_dataset
 
 
 def test_evaluation_dataset_is_nonempty_and_has_unique_ids() -> None:
@@ -27,3 +28,15 @@ def test_route_policy_baseline_covers_safety_branches() -> None:
 
     assert report["accuracy"] == 1.0
     assert all(case["passed"] for case in report["cases"])
+
+
+def test_trajectory_contract_evaluation_is_reproducible() -> None:
+    cases = load_trajectory_dataset()
+    report = evaluate_trajectory(cases)
+
+    assert len(cases) == 8
+    assert report["intent_accuracy"] == 1.0
+    assert report["route_accuracy"] == 1.0
+    assert report["tool_accuracy"] == 1.0
+    assert report["all_contracts_accuracy"] == 1.0
+    assert report["bad_cases"] == []
