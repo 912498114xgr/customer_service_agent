@@ -85,6 +85,11 @@ class ToolRegistry:
             "side_effects": False,
         }
 
+    def backend_for(self, name: str) -> str:
+        """返回该 Skill 实际使用的执行后端。"""
+        self.catalog.get(name)
+        return "local_demo"
+
 
 class MCPToolRegistry(ToolRegistry):
     """将订单只读 Skill 通过 stdio MCP 转发，其余工具保留本地演示执行。"""
@@ -100,6 +105,11 @@ class MCPToolRegistry(ToolRegistry):
         import asyncio
 
         return asyncio.run(self._execute_mcp(name, arguments))
+
+    def backend_for(self, name: str) -> str:
+        """区分转发到 MCP 的只读工具与本地演示工具。"""
+        self.catalog.get(name)
+        return "mcp_stdio" if name in self._MCP_TOOLS else "local_demo"
 
     async def _execute_mcp(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         import shutil

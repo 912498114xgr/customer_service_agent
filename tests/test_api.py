@@ -51,3 +51,25 @@ def test_demo_endpoints_execute_scripted_graph_scenarios() -> None:
     assert cancelled.json()["trace"]["confirmation_status"] == "declined"
     assert cancelled.json()["trace"]["execution_status"] == "cancelled"
     assert client.post("/v1/demo/not-a-scenario").status_code == 404
+
+
+def test_workbench_demo_uses_mcp_for_supported_order_skill(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("CUSTOMER_CARE_USE_MCP_ORDER_TOOLS", "true")
+    client = TestClient(create_app())
+
+    health = client.get("/health").json()
+    multi = client.post("/v1/demo/multi-skill")
+    conflict = client.post("/v1/demo/conflict")
+
+    assert health["mcp_order_tools"] is True
+    assert multi.status_code == 200
+    assert multi.json()["trace"]["tool_backends"] == {
+        "get_order_receipt": "local_demo",
+        "get_order_status": "mcp_stdio",
+    }
+    assert multi.json()["trace"]["execution_status"] == "succeeded"
+    assert conflict.json()["trace"]["route"] == "clarify"
+    assert conflict.json()["trace"]["tool_backends"] == {}

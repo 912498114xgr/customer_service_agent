@@ -49,6 +49,8 @@ def create_app(service: CustomerCareService | None = None) -> Any:
             "service": "customer-care",
             "mode": "mock" if settings.use_mock else "live",
             "live_configured": bool(settings.llm_api_key),
+            "mcp_order_tools": settings.use_mcp_order_tools,
+            "memory_backend": "sqlite" if settings.sqlite_memory_path else "in_memory",
         }
 
     @app.get("/v1/demo/scenarios")
@@ -64,7 +66,8 @@ def create_app(service: CustomerCareService | None = None) -> Any:
         if scenario is None:
             raise HTTPException(status_code=404, detail="演练场景不存在")
         if scenario_id not in demo_services:
-            demo_services[scenario_id] = CustomerCareService(create_scenario_llm(scenario_id))
+            registry = MCPToolRegistry() if settings.use_mcp_order_tools else None
+            demo_services[scenario_id] = CustomerCareService(create_scenario_llm(scenario_id), registry=registry)
         demo_service = demo_services[scenario_id]
         try:
             state, trace = await demo_service.chat(f"scripted-demo-{scenario_id}", scenario["query"])

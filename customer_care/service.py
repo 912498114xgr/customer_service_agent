@@ -43,6 +43,7 @@ class CustomerCareService:
         self._memory_policy = memory_policy or MemoryPolicy()
         self._memory = memory or InMemoryMemoryStore(ttl_seconds=self._memory_policy.ttl_seconds)
         registry = registry or ToolRegistry()
+        self._registry = registry
         self._executor = MultiSkillExecutor(registry)
         self._confirmation_locks: dict[str, asyncio.Lock] = {}
         self._graph = build_customer_care_graph(ObservedLLM(llm), registry=registry, executor=self._executor)
@@ -133,6 +134,7 @@ class CustomerCareService:
             "context_summary": result.context_summary,
             "knowledge_sources": result.knowledge_sources,
             "confirmation": confirmation,
+            "tool_backends": self._tool_backends(result),
         }
 
     async def confirm_action(self, user_id: str, token: str) -> tuple[CareState, dict[str, Any]]:
@@ -183,6 +185,7 @@ class CustomerCareService:
                     "confirmation_status": state.confirmation_status,
                     "execution_status": state.execution_status,
                     "task_results": state.task_results,
+                    "tool_backends": self._tool_backends(state),
                 }
 
             state.task_results = [item.model_dump(mode="json") for item in report.results]
@@ -206,6 +209,7 @@ class CustomerCareService:
                 "confirmation_status": state.confirmation_status,
                 "execution_status": state.execution_status,
                 "task_results": state.task_results,
+                "tool_backends": self._tool_backends(state),
             }
 
     async def cancel_action(self, user_id: str, token: str) -> tuple[CareState, dict[str, Any]]:
@@ -231,7 +235,16 @@ class CustomerCareService:
                 "confirmation_status": state.confirmation_status,
                 "execution_status": state.execution_status,
                 "task_results": state.task_results,
+                "tool_backends": self._tool_backends(state),
             }
+
+    def _tool_backends(self, state: CareState) -> dict[str, str]:
+        """按本轮计划/结果列出每个 Skill 的真实执行后端。"""
+        names = {item.get("tool_name") for item in state.task_results if item.get("tool_name")}
+        names.update(task.get("tool_name") for task in (state.task_plan or {}).get("tasks", []) if task.get("tool_name"))
+        if state.selected_tool:
+            names.add(state.selected_tool)
+        return {name: self._registry.backend_for(name) for name in sorted(names)}
 
     async def reset(self, user_id: str) -> None:
         """当前内存后端没有删除接口，重置通过替换会话状态实现。"""
