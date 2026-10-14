@@ -4,6 +4,7 @@ import asyncio
 import time
 
 from customer_care.memory.base import MemoryStore, VersionNotFoundError
+from customer_care.memory.confirmation import claim_state
 from customer_care.memory.versioning import make_version, parse_state, serialize_state
 from customer_care.state import CareState
 
@@ -58,6 +59,33 @@ class InMemoryMemoryStore(MemoryStore):
             if self._ttl_seconds is not None:
                 self._expires_at[user_id] = time.monotonic() + self._ttl_seconds
             return parse_state(payload)
+
+    async def claim_confirmation(
+        self,
+        user_id: str,
+        confirmation_id: str,
+        token_hash: str,
+        now: float,
+        target_status: str,
+    ) -> tuple[str, CareState]:
+        async with self._lock_for(user_id):
+            self._purge_if_expired(user_id)
+            current = self._current_versions.get(user_id)
+            state = (
+                parse_state(self._snapshots[user_id][current])
+                if current is not None
+                else CareState(user_id=user_id)
+            )
+            result, updated = claim_state(state, confirmation_id, token_hash, now, target_status)
+            if result in {"claimed", "expired"}:
+                snapshots = self._snapshots.setdefault(user_id, {})
+                payload = serialize_state(updated)
+                version = make_version(len(snapshots) + 1, payload)
+                snapshots[version] = payload
+                self._current_versions[user_id] = version
+                if self._ttl_seconds is not None:
+                    self._expires_at[user_id] = time.monotonic() + self._ttl_seconds
+            return result, updated
 
     def _purge_if_expired(self, user_id: str) -> None:
         expires_at = self._expires_at.get(user_id)

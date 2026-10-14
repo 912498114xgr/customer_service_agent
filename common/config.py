@@ -36,5 +36,9 @@ class Settings(BaseSettings):
     memory_max_messages: int = Field(default=16, ge=2, le=100)
     memory_max_chars: int = Field(default=6000, ge=200, le=100000)
     redis_url: str = "redis://localhost:6379/0"
+    sqlite_memory_path: str | None = Field(
+        default=None,
+        validation_alias="CUSTOMER_CARE_SQLITE_PATH",
+    )
     k8s_context: str | None = None
 

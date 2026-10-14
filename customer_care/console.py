@@ -8,6 +8,7 @@ import os
 from common.config import Settings
 from common.llm import create_llm_client
 from common.mock_llm import MockLLM
+from customer_care.memory.sqlite_memory import SQLiteMemoryStore
 from customer_care.service import CustomerCareService
 
 
@@ -25,7 +26,8 @@ async def _run(user_id: str) -> None:
         print(f"模型配置错误：{exc}")
         print("请检查 .env 中的 USE_MOCK、LLM_API_KEY、LLM_BASE_URL 和 LLM_MODEL。")
         return
-    service = CustomerCareService(llm)
+    memory = SQLiteMemoryStore(settings.sqlite_memory_path) if settings.sqlite_memory_path else None
+    service = CustomerCareService(llm, memory=memory)
 
     print("客服 Agent 已启动。输入 /help 查看命令，输入 /quit 退出。")
     if isinstance(llm, MockLLM):

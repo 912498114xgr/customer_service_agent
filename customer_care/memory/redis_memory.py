@@ -3,8 +3,10 @@
 from urllib.parse import quote
 
 from redis.asyncio import Redis
+from redis.exceptions import WatchError
 
 from customer_care.memory.base import MemoryStore, VersionNotFoundError
+from customer_care.memory.confirmation import claim_state
 from customer_care.memory.versioning import make_version, parse_state, serialize_state
 from customer_care.state import CareState
 
@@ -84,4 +86,40 @@ class RedisMemoryStore(MemoryStore):
         if payload is None or payload is False:
             raise VersionNotFoundError(f"unknown memory version: {version}")
         return parse_state(payload)
+
+    async def claim_confirmation(
+        self,
+        user_id: str,
+        confirmation_id: str,
+        token_hash: str,
+        now: float,
+        target_status: str,
+    ) -> tuple[str, CareState]:
+        sequence_key, current_key, versions_key = self._keys(user_id)
+        async with self._client.pipeline(transaction=True) as pipe:
+            while True:
+                try:
+                    await pipe.watch(sequence_key, current_key, versions_key)
+                    payload = await pipe.get(current_key)
+                    state = parse_state(payload) if payload else CareState(user_id=user_id)
+                    result, updated = claim_state(state, confirmation_id, token_hash, now, target_status)
+                    if result not in {"claimed", "expired"}:
+                        return result, updated
+
+                    sequence = int(await pipe.get(sequence_key) or 0) + 1
+                    serialized = serialize_state(updated)
+                    digest = make_version(0, serialized).split("-", maxsplit=1)[1]
+                    version = f"{sequence:08d}-{digest}"
+                    pipe.multi()
+                    pipe.set(sequence_key, sequence)
+                    pipe.set(current_key, serialized)
+                    pipe.hset(versions_key, version, serialized)
+                    if self._ttl_seconds:
+                        pipe.expire(sequence_key, self._ttl_seconds)
+                        pipe.expire(current_key, self._ttl_seconds)
+                        pipe.expire(versions_key, self._ttl_seconds)
+                    await pipe.execute()
+                    return result, updated
+                except WatchError:
+                    continue
 

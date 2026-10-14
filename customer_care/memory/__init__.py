@@ -3,6 +3,7 @@
 from customer_care.memory.base import MemoryStore, VersionNotFoundError
 from customer_care.memory.in_memory import InMemoryMemoryStore
 from customer_care.memory.redis_memory import RedisMemoryStore
+from customer_care.memory.sqlite_memory import SQLiteMemoryStore
 from customer_care.memory.policy import MemoryPolicy, compact_state
 
 __all__ = [
@@ -10,6 +11,7 @@ __all__ = [
     "MemoryPolicy",
     "MemoryStore",
     "RedisMemoryStore",
+    "SQLiteMemoryStore",
     "VersionNotFoundError",
     "compact_state",
 ]

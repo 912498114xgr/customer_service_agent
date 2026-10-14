@@ -2,7 +2,6 @@
 
 import asyncio
 import hashlib
-import hmac
 import secrets
 import time
 from typing import Any
@@ -138,28 +137,18 @@ class CustomerCareService:
             state = compact_state(await self._memory.load(user_id), self._memory_policy)
             if state.confirmation_status != "pending" or not state.confirmation_token_hash:
                 raise ConfirmationError("没有可确认的待处理操作。")
-            if state.confirmation_expires_at is None or state.confirmation_expires_at <= time.time():
-                state.confirmation_status = "expired"
-                state.confirmation_token_hash = None
-                state.awaiting_confirmation = False
-                state.answer = "The confirmation expired. Please submit the request again if you still want this action."
-                await self._memory.save(user_id, state)
-                raise ConfirmationError("确认已过期，请重新提交请求。", 410)
             supplied_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-            if not hmac.compare_digest(state.confirmation_token_hash, supplied_hash):
-                raise ConfirmationError("确认令牌无效。", 403)
             if not state.task_plan:
                 raise ConfirmationError("待确认计划缺失，已拒绝执行。")
 
             confirmation_id = state.confirmation_id
             if not confirmation_id:
                 raise ConfirmationError("确认操作标识缺失，已拒绝执行。")
+            claim_result, state = await self._memory.claim_confirmation(
+                user_id, confirmation_id, supplied_hash, time.time(), "executing"
+            )
+            self._raise_claim_error(claim_result)
             plan = TaskPlan.model_validate(state.task_plan)
-            state.confirmation_status = "executing"
-            state.confirmation_token_hash = None
-            state.confirmation_expires_at = None
-            state.messages.append({"role": "user", "content": "[用户确认待处理操作]"})
-            await self._memory.save(user_id, state)
 
             metrics.node("execute_confirmed_plan")
             try:
@@ -219,30 +208,14 @@ class CustomerCareService:
             state = compact_state(await self._memory.load(user_id), self._memory_policy)
             if state.confirmation_status != "pending" or not state.confirmation_token_hash:
                 raise ConfirmationError("没有可拒绝的待确认操作。")
-            if state.confirmation_expires_at is None or state.confirmation_expires_at <= time.time():
-                state.confirmation_status = "expired"
-                state.confirmation_token_hash = None
-                state.confirmation_expires_at = None
-                state.awaiting_confirmation = False
-                await self._memory.save(user_id, state)
-                raise ConfirmationError("确认已过期。", 410)
             supplied_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-            if not hmac.compare_digest(state.confirmation_token_hash, supplied_hash):
-                raise ConfirmationError("确认令牌无效。", 403)
-
-            state.confirmation_status = "declined"
-            state.confirmation_token_hash = None
-            state.confirmation_expires_at = None
-            state.awaiting_confirmation = False
-            state.execution_status = "cancelled"
-            state.tool_result = {"status": "cancelled", "reason": "user_declined"}
-            state.task_results = [
-                {**result, "status": "cancelled", "error": "用户拒绝执行，工具未调用"}
-                for result in state.task_results
-            ]
-            state.route = "clarify"
-            state.answer = "The operation was cancelled. No tool was run."
-            state.messages.append({"role": "user", "content": "[用户拒绝待执行操作]"})
+            confirmation_id = state.confirmation_id
+            if not confirmation_id:
+                raise ConfirmationError("确认操作标识缺失，已拒绝操作。")
+            claim_result, state = await self._memory.claim_confirmation(
+                user_id, confirmation_id, supplied_hash, time.time(), "declined"
+            )
+            self._raise_claim_error(claim_result)
             version = await self._memory.save(user_id, state)
             return state, {
                 "request_id": uuid4().hex,
@@ -275,4 +248,17 @@ class CustomerCareService:
                 if task.get("requires_confirmation")
             ],
         }
+
+    @staticmethod
+    def _raise_claim_error(result: str) -> None:
+        if result == "expired":
+            raise ConfirmationError("确认已过期，请重新提交请求。", 410)
+        if result == "invalid_token":
+            raise ConfirmationError("确认令牌无效。", 403)
+        if result == "missing_plan":
+            raise ConfirmationError("待确认计划缺失，已拒绝执行。")
+        if result in {"not_pending", "invalid_confirmation", "no_state"}:
+            raise ConfirmationError("没有可处理的待确认操作。")
+        if result != "claimed":
+            raise ConfirmationError("确认状态无法安全迁移。")
 

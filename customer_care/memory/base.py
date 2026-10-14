@@ -26,3 +26,14 @@ class MemoryStore(ABC):
     async def rollback(self, user_id: str, version: str) -> CareState:
         """将已保存快照设为当前状态，但不删除后续快照。"""
 
+    @abstractmethod
+    async def claim_confirmation(
+        self,
+        user_id: str,
+        confirmation_id: str,
+        token_hash: str,
+        now: float,
+        target_status: str,
+    ) -> tuple[str, CareState]:
+        """原子校验并消费待确认操作，返回结果码及最新状态。"""
+

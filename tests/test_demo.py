@@ -4,6 +4,7 @@ import time
 import pytest
 
 from customer_care.demo import create_scenario_llm, demo_scenarios
+from customer_care.memory.sqlite_memory import SQLiteMemoryStore
 from customer_care.service import ConfirmationError, CustomerCareService
 
 
@@ -140,6 +141,29 @@ def test_concurrent_confirmation_attempts_execute_at_most_once_in_one_process() 
     persisted = asyncio.run(service._memory.load("demo"))
     assert persisted.confirmation_status == "completed"
     assert len(persisted.task_results) == 1
+
+
+def test_confirmation_is_claimed_once_across_service_instances(tmp_path) -> None:
+    database = tmp_path / "customer-care.db"
+    first = CustomerCareService(create_scenario_llm("side-effect"), SQLiteMemoryStore(database))
+    second = CustomerCareService(create_scenario_llm("side-effect"), SQLiteMemoryStore(database))
+    _, trace = asyncio.run(first.chat("shared-user", "Change my notification preference to weekly"))
+    token = trace["confirmation"]["token"]
+
+    async def confirm_from_both_instances():
+        return await asyncio.gather(
+            first.confirm_action("shared-user", token),
+            second.confirm_action("shared-user", token),
+            return_exceptions=True,
+        )
+
+    results = asyncio.run(confirm_from_both_instances())
+
+    assert sum(not isinstance(result, Exception) for result in results) == 1
+    assert sum(isinstance(result, ConfirmationError) for result in results) == 1
+    recovered = asyncio.run(SQLiteMemoryStore(database).load("shared-user"))
+    assert recovered.confirmation_status == "completed"
+    assert len(recovered.task_results) == 1
 
 
 def test_uncertain_execution_requires_reconciliation_and_consumes_token(monkeypatch: pytest.MonkeyPatch) -> None:

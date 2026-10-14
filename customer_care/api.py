@@ -8,6 +8,7 @@ from typing import Any
 from common.llm import create_llm_client
 from common.config import Settings
 from customer_care.demo import create_scenario_llm, demo_scenarios
+from customer_care.memory.sqlite_memory import SQLiteMemoryStore
 from customer_care.service import CustomerCareService
 
 
@@ -23,7 +24,9 @@ def create_app(service: CustomerCareService | None = None) -> Any:
 
     app = FastAPI(title="Customer Service Agent", version="0.1.0")
     settings = Settings()
-    service = service or CustomerCareService(create_llm_client(settings))
+    if service is None:
+        memory = SQLiteMemoryStore(settings.sqlite_memory_path) if settings.sqlite_memory_path else None
+        service = CustomerCareService(create_llm_client(settings), memory=memory)
     demo_services: dict[str, CustomerCareService] = {}
 
     class ChatRequest(BaseModel):
