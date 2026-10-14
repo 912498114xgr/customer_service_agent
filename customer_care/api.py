@@ -10,6 +10,7 @@ from common.config import Settings
 from customer_care.demo import create_scenario_llm, demo_scenarios
 from customer_care.memory.sqlite_memory import SQLiteMemoryStore
 from customer_care.service import CustomerCareService
+from customer_care.tools.registry import MCPToolRegistry
 
 
 def create_app(service: CustomerCareService | None = None) -> Any:
@@ -26,7 +27,8 @@ def create_app(service: CustomerCareService | None = None) -> Any:
     settings = Settings()
     if service is None:
         memory = SQLiteMemoryStore(settings.sqlite_memory_path) if settings.sqlite_memory_path else None
-        service = CustomerCareService(create_llm_client(settings), memory=memory)
+        registry = MCPToolRegistry() if settings.use_mcp_order_tools else None
+        service = CustomerCareService(create_llm_client(settings), memory=memory, registry=registry)
     demo_services: dict[str, CustomerCareService] = {}
 
     class ChatRequest(BaseModel):

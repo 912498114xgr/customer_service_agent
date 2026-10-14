@@ -32,10 +32,17 @@ class ConfirmationError(ValueError):
 class CustomerCareService:
     """客服会话编排服务；每次请求都从记忆加载并保存完整状态。"""
 
-    def __init__(self, llm: LLMClient, memory: MemoryStore | None = None, *, memory_policy: MemoryPolicy | None = None) -> None:
+    def __init__(
+        self,
+        llm: LLMClient,
+        memory: MemoryStore | None = None,
+        *,
+        memory_policy: MemoryPolicy | None = None,
+        registry: ToolRegistry | None = None,
+    ) -> None:
         self._memory_policy = memory_policy or MemoryPolicy()
         self._memory = memory or InMemoryMemoryStore(ttl_seconds=self._memory_policy.ttl_seconds)
-        registry = ToolRegistry()
+        registry = registry or ToolRegistry()
         self._executor = MultiSkillExecutor(registry)
         self._confirmation_locks: dict[str, asyncio.Lock] = {}
         self._graph = build_customer_care_graph(ObservedLLM(llm), registry=registry, executor=self._executor)

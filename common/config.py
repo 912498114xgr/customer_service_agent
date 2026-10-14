@@ -40,5 +40,9 @@ class Settings(BaseSettings):
         default=None,
         validation_alias="CUSTOMER_CARE_SQLITE_PATH",
     )
+    use_mcp_order_tools: bool = Field(
+        default=False,
+        validation_alias="CUSTOMER_CARE_USE_MCP_ORDER_TOOLS",
+    )
     k8s_context: str | None = None
 

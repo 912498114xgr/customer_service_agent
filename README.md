@@ -64,6 +64,12 @@ uv run python -m customer_care.console
 
 输入 `/help` 查看命令，输入 `/reset` 重置会话，输入 `/quit` 退出。要体验真实模型，把 `.env` 中的 `USE_MOCK` 设为 `false` 并配置模型 Key；Mock 模式只用于离线演示和测试，不会理解任意自然语言。
 
+## MCP Skill 演练
+
+项目包含一个本地 stdio MCP Server，提供只读的订单状态和退款状态查询。先设置 `CUSTOMER_CARE_USE_MCP_ORDER_TOOLS=true`，再运行交互 CLI 或 API；路由、参数门禁和结果校验仍由 Agent 主程序负责，`MCPToolRegistry` 将这两个 Skill 通过 MCP `tools/list` 与 `tools/call` 转发到独立子进程。工具实现位于 `customer_care/mcp_server.py`，接入适配器位于 `customer_care/tools/registry.py`。完整协议观察和新增一个 Skill 的研发步骤见 [T29 MCP 实验与新增 Skill 流程](客服切片_T29_MCP实验与新增Skill.md)。
+
+本地端到端验证可运行 `uv run --project . --no-sync python -m pytest tests/test_mcp_tools.py -q`。使用 `python -m pytest` 可确保 pytest 与 MCP 子进程取自当前项目的 uv 环境；若机器激活了其他项目虚拟环境，裸 `uv run pytest` 可能选中不匹配的测试解释器。
+
 ## 连接 OpenAI 兼容模型
 
 复制 `.env.example` 为 `.env`，设置：
@@ -89,6 +95,7 @@ customer_care/state.py          LangGraph 对话状态
 customer_care/graph.py          状态图装配与分支
 customer_care/nodes/            语言、意图、改写、澄清、路由、回复节点
 customer_care/memory/           内存、Redis 与 SQLite 版本快照
+customer_care/mcp_server.py     订单只读 MCP Server
 customer_care/tools/            30 个工具目录、两级路由、本地执行器
 customer_care/quality/          硬规则和模型评分
 customer_care/claims/           规则限额和人工审核建议

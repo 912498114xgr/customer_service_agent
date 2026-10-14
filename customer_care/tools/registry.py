@@ -85,3 +85,67 @@ class ToolRegistry:
             "side_effects": False,
         }
 
+
+class MCPToolRegistry(ToolRegistry):
+    """将订单只读 Skill 通过 stdio MCP 转发，其余工具保留本地演示执行。"""
+
+    _MCP_TOOLS = {"get_order_status", "get_refund_status"}
+
+    def __init__(self, catalog: ToolCatalog | None = None) -> None:
+        super().__init__(catalog)
+
+    def execute(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        if name not in self._MCP_TOOLS:
+            return super().execute(name, arguments)
+        import asyncio
+
+        return asyncio.run(self._execute_mcp(name, arguments))
+
+    async def _execute_mcp(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        import shutil
+        from datetime import timedelta
+        from pathlib import Path
+        from sysconfig import get_paths
+
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+
+        server = StdioServerParameters(
+            command=shutil.which("uv") or "uv",
+            args=[
+                "run",
+                "--project",
+                str(Path(__file__).resolve().parents[2]),
+                "--no-sync",
+                "python",
+                "-m",
+                "customer_care.mcp_server",
+            ],
+            cwd=Path(__file__).resolve().parents[2],
+        )
+        async with stdio_client(server) as (read_stream, write_stream):
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                tools = await session.list_tools()
+                if name not in {tool.name for tool in tools.tools}:
+                    raise RuntimeError(f"MCP 服务未发布所需 Skill：{name}")
+                result = await session.call_tool(
+                    name,
+                    arguments,
+                    read_timeout_seconds=timedelta(seconds=10),
+                )
+                if result.isError:
+                    raise RuntimeError(f"MCP Skill 调用失败：{name}")
+                if result.structuredContent is not None:
+                    return result.structuredContent
+                text_blocks = [item.text for item in result.content if getattr(item, "text", None)]
+                if len(text_blocks) != 1:
+                    raise RuntimeError(f"MCP Skill 返回格式错误：{name}")
+                try:
+                    payload = json.loads(text_blocks[0])
+                except json.JSONDecodeError as exc:
+                    raise RuntimeError(f"MCP Skill 未返回 JSON 对象：{name}") from exc
+                if not isinstance(payload, dict):
+                    raise RuntimeError(f"MCP Skill 返回值必须是 JSON 对象：{name}")
+                return payload
+
